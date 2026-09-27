@@ -24,25 +24,31 @@ const rbPart = (bl: string) => [bl, `${bl}b`, `${bl}a`].filter(p => partNums.has
 // Only elements whose design_id is filled: checked on Pick a Brick (Sept 2026),
 // those are the ones LEGO sells (e.g. 300321 yes, 4103590 no, for Brick 2x2 Red).
 const byPartColor = new Map<string, number[]>();
+// every part and colour ever made (any element), for BrickLink: sizes aren't made in every colour
+const everMade = new Set<string>();
 for (const [el, part, color, design] of elements) {
+  if (/^\d+$/.test(el)) everMade.add(`${part}|${color}`);
   if (!/^\d+$/.test(el) || !design) continue;
   const k = `${part}|${color}`;
   byPartColor.set(k, [...(byPartColor.get(k) ?? []), +el]);
 }
 
 const table: Record<string, string> = {};
+const made: string[] = [];
 let found = 0, missing = 0;
 const allParts = [...new Set(Object.values(PARTS).flatMap(m => Object.values(m)))].sort();
 for (const part of allParts) for (const c of BRICK_COLORS) {
   const ids = rbPart(part).flatMap(p => byPartColor.get(`${p}|${rbColor.get(c.id)}`) ?? []);
   // several sold IDs for one part and colour: keep the newest
   if (ids.length) { table[`${part}|${c.id}`] = String(Math.max(...ids)); found++; } else missing++;
+  if (rbPart(part).some(p => everMade.has(`${p}|${rbColor.get(c.id)}`))) made.push(`${part}|${c.id}`);
 }
 const out = {
   source: 'Rebrickable (rebrickable.com/downloads), elements/parts/colors exports',
   exported: statSync('real/elements.csv').mtime.toISOString().slice(0, 10),
-  note: 'key = "BrickLink part|BrickLink colour ID", value = LEGO Element ID. Missing key = no Element ID known: not available at LEGO.',
+  note: 'key = "BrickLink part|BrickLink colour ID", value = LEGO Element ID. Missing key = no Element ID known: not available at LEGO. made = every part|colour ever produced (on BrickLink).',
   elements: table,
+  made,
 };
 writeFileSync('src/data/elements.json', JSON.stringify(out, null, 0) + '\n');
 console.log(`${allParts.length} parts × ${BRICK_COLORS.length} colours: ${found} with an Element ID, ${missing} without · ${(statSync('src/data/elements.json').size / 1024).toFixed(1)} KB`);

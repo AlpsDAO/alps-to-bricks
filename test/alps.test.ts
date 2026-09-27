@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { alpGrid, GRID, seedFromParam, seedToParam, type AlpSeed } from '../src/alps/alps';
 import imageData from '../src/alps/image-data.json';
 import { analyze } from '../src/core/analyze';
-import { buildModel } from '../src/core/build';
+import { buildModel, headVoxels } from '../src/core/build';
+import { readVox, writeVox } from '../src/alps/vox';
 import { PART } from '../src/core/detect';
 import { BLACK } from '../src/core/palette';
 import { alp, ALPS } from './alps';
@@ -86,4 +87,78 @@ describe('every trait builds solid', () => {
       }
     }, 180_000);
   }
+});
+
+describe('every glasses symbol survives colour matching', () => {
+  // the A on each goggle clip (rows 12–14, columns 7–9) and the 🤘 in each gnargles bridge (rows 11–14,
+  // columns 15–17): where the art has two colours, the bricks must too
+  const { images } = imageData;
+  it('all 200 glasses', () => {
+    images.glasses.forEach((gl, g) => {
+      const grid = alpGrid({ background: 0, body: 0, accessory: 0, head: 0, glasses: g }), A = analyze(grid);
+      const pairs = gl.filename.includes('gnargles') ? [[11, 15, 11, 14], [13, 16, 13, 15], [14, 17, 14, 16]] : [[12, 8, 12, 7], [13, 7, 13, 8], [14, 9, 14, 8]];
+      for (const [r1, c1, r2, c2] of pairs) {
+        if (grid.cells[r1][c1] === grid.cells[r2][c2]) continue;
+        expect(A.px[r1][c1]!.color, gl.filename).not.toBe(A.px[r2][c2]!.color);
+      }
+    });
+  });
+});
+
+describe('round the sides', () => {
+  const cellsAt = (id: number, size: 'mini' | 'xl') => buildModel(alp(id), size);
+  it('goggles show their A on both sides of the strap, and gnargles arms hook down behind the ears', () => {
+    const A = analyze(alp(277));
+    expect(A.glasses?.kind).toBe('strap');
+    expect(A.glasses?.glyph?.color).not.toBe(A.glasses?.color);
+    expect(analyze(alp(12)).glasses?.kind).toBe('arms');
+    // both build solid with the strap / arms painted on
+    for (const id of [277, 12]) expect(cellsAt(id, 'mini').checks.floating).toBe(0);
+  });
+  it('shapes heads by what they are: boxes full depth, round heads rounded at the back, flat ones shallow', () => {
+    const depth = (id: number) => { const m = cellsAt(id, 'xl'); return Math.max(...m.pieces.filter(p => p.y > 60).map(p => p.z + p.d)); };
+    expect(alp(277).style?.head).toBe('box');
+    expect(alp(192).style?.head).toBe('flat');
+    expect(depth(192)).toBeLessThan(depth(277));
+  });
+  it('wraps patterns round the torso, but keeps prints on the front', () => {
+    expect(alp(277).style?.accessory).toBe('around');
+    expect(alp(146).style?.accessory).toBe('front');
+    const back = (id: number) => { const A = analyze(alp(id)); return new Set(A.px.slice(21).flat().filter(p => p && p.part === PART.accessory).map(p => p!.fillBack)); };
+    expect(back(277).size).toBeGreaterThan(1);   // stripes and checks carry on round the back
+    expect(back(146).size).toBe(1);              // a print: the back is the body's colour
+  });
+});
+
+describe('fewest pieces, square pixels', () => {
+  it('keeps every pixel row its exact height (XL: 5 plates, Mini: 3 and 2 alternating)', () => {
+    for (const size of ['mini', 'xl'] as const) {
+      const m = buildModel(alp(277), size), g = alp(277);
+      const rows = g.cells.filter(row => row.some(v => v >= 0)).length;
+      const top = Math.max(...m.pieces.filter(p => p.kind !== 'tile').map(p => p.y + p.h));
+      expect(top, size).toBe(size === 'xl' ? rows * 5 : Math.ceil(rows / 2) * 3 + Math.floor(rows / 2) * 2);
+    }
+  });
+  it('builds mostly from bricks in XL', () => {
+    const m = buildModel(alp(277), 'xl');
+    expect(m.pieces.filter(p => p.kind === 'brick').length).toBeGreaterThan(m.pieces.filter(p => p.kind === 'plate').length);
+  });
+});
+
+describe('hand-made heads (.vox)', () => {
+  it('exports a head and builds the same model back from it', () => {
+    const g = alp(277);
+    const file = writeVox(headVoxels(g)), back = readVox(file);
+    expect(back.voxels.length).toBeGreaterThan(1000);
+    expect(buildModel({ ...g, headModel: back }, 'mini').checks.pieces).toBe(buildModel(g, 'mini').checks.pieces);
+    const xl = buildModel({ ...g, headModel: back }, 'xl').checks;
+    expect(xl.floating).toBe(0);
+  });
+  it('keeps the front pixel-exact whatever colour the model has there', () => {
+    const g = alp(277), m = headVoxels(g);
+    const painted = { ...m, voxels: m.voxels.map(v => ({ ...v, rgb: [255, 0, 255] as [number, number, number] })) };
+    const front = buildModel({ ...g, headModel: painted }, 'mini').pieces.filter(p => p.z === 0 && p.y > 40);
+    const auto = buildModel(g, 'mini').pieces.filter(p => p.z === 0 && p.y > 40);
+    expect(new Set(front.map(p => p.c))).toEqual(new Set(auto.map(p => p.c)));
+  });
 });

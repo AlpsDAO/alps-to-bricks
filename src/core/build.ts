@@ -1,13 +1,17 @@
 // Punk grid -> buildable brick model (Mini or XL).
-import { analyze, N, type PixelInfo } from './analyze';
+import { analyze, N, type Analysis, type PixelInfo } from './analyze';
+import { hexToRgb, type RGB } from './color';
+import type { VoxModel } from '../alps/vox';
 import { checkModel, connections, grounded, type Checks } from './check';
-import { PART, type PunkGrid } from './detect';
+import { PART, type HeadModel, type PunkGrid } from './detect';
 import { BASE_GRAY, BLACK, COLOR_BY_ID, mapColors, TRANS_CLEAR } from './palette';
-import { partId, partName, SIZES, TILE_SIZES, type Kind, type Piece } from './parts';
+import { partId, partName, sizesFor, TILE_SIZES, type Kind, type Piece } from './parts';
 import { key, kx, kz, tileLayer, type Layer, type TileOpts } from './tile';
-import { availableAtLego } from './lego';
+import { availableAtLego, madeInColour } from './lego';
 
 export type SizeId = 'mini' | 'xl';
+/** how many pixels in from the outline a round head's back reaches full depth */
+const ROUND_PX = 4;
 
 export interface SizeSpec {
   id: SizeId;
@@ -31,14 +35,14 @@ export interface SizeSpec {
 
 export const SIZES_SPEC: Record<SizeId, SizeSpec> = {
   mini: {
-    id: 'mini', sx: 1, D: 8, front: 2, taper: [2, 1], slab: 4, frontSlab: 3, wall: 1, chamfer: 1,
+    id: 'mini', sx: 1, D: 8, front: 2, taper: [2, 1], slab: 4, frontSlab: 3, wall: 1, chamfer: 0,
     // rows alternate 1 brick (3 plates) and 2 plates: 2.5 plates = 8 mm on average, like a stud: square pixels
     rowLayers: [{ kind: 'brick', h: 3 }], rowLayersAlt: [{ kind: 'plate', h: 1 }, { kind: 'plate', h: 1 }],
     baseLayers: [{ kind: 'plate', h: 1 }, { kind: 'plate', h: 1 }],
     baseMargin: { side: 1, front: 2, back: 1 }, cantilever: 6, slopes: false, nameplate: [4, 1],
   },
   xl: {
-    id: 'xl', sx: 2, D: 20, front: 2, taper: [4, 2], slab: 8, frontSlab: 4, wall: 2, chamfer: 2,
+    id: 'xl', sx: 2, D: 20, front: 2, taper: [4, 2], slab: 8, frontSlab: 4, wall: 2, chamfer: 0,
     rowLayers: [{ kind: 'brick', h: 3 }, { kind: 'plate', h: 1 }, { kind: 'plate', h: 1 }],
     baseLayers: [{ kind: 'brick', h: 3 }, { kind: 'brick', h: 3 }],
     baseMargin: { side: 2, front: 4, back: 2 }, cantilever: 12, slopes: true, nameplate: [6, 2],
@@ -59,7 +63,7 @@ export interface Model {
   dims: [number, number, number];
 }
 
-interface LayerRec { y: number; h: number; kind: Kind; cells: Layer; row: number | null; pieces: Piece[] }
+interface LayerRec { y: number; h: number; kind: Kind; cells: Layer; row: number | null; pieces: Piece[]; prefX: boolean }
 
 export interface BuildOptions {
   /** only use parts LEGO sells (Pick a Brick), splitting the others into smaller ones */
@@ -68,7 +72,8 @@ export interface BuildOptions {
 
 export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<SizeSpec> & BuildOptions = {}): Model {
   const S = { ...SIZES_SPEC[size], ...overrides };
-  const allow = overrides.preferLego ? availableAtLego : undefined;
+  // only parts that exist in that colour; with "only parts LEGO sells", only the ones LEGO sells
+  const allow = overrides.preferLego ? availableAtLego : madeInColour;
   const A = analyze(grid);
   const notes = [...A.notes];
   // the base takes the Alp's background colour; the nameplate stands out from it
@@ -77,53 +82,7 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
   const { sx, D } = S;
 
   // ---------- 1. pixels -> stud cells, one map per pixel row ----------
-  const rows = [...Array(N).keys()].filter(r => A.px[r].some(Boolean));
-  const rTop = rows[0], rBot = rows[rows.length - 1];
-  const range = new Map<string, [number, number]>();
-  const rangeOf = (r: number, c: number, p: PixelInfo): [number, number] => {
-    if (p.role === 'body') {
-      const inset = p.fromTop < 2 ? S.taper[p.fromTop] : 0;
-      // the glasses keep a flat front even where they top a column, so the A logo reads whole
-      return [p.part === PART.glasses ? 0 : inset, D - 1 - inset];
-    }
-    const z0 = Math.round((D - S.slab) / 2); void r; void c;
-    // thin bits of the glasses: flat on the front, and deep enough to reach the middle, where thin head
-    // parts resting on them sit
-    if (p.anchor === 'front') return [0, Math.max(S.frontSlab, z0 + S.slab) - 1];
-    return [z0, z0 + S.slab - 1];
-  };
-  for (const r of rows) for (let c = 0; c < N; c++) { const p = A.px[r][c]; if (p && !p.depthFrom) range.set(`${r},${c}`, rangeOf(r, c, p)); }
-  for (const r of rows) for (let c = 0; c < N; c++) {
-    const p = A.px[r][c]; if (!p || !p.depthFrom) continue;
-    const t = range.get(`${p.depthFrom[0]},${p.depthFrom[1]}`) ?? rangeOf(r, c, p);
-    if (p.role === 'stalk') { const m = Math.floor((t[0] + t[1] + 1) / 2); range.set(`${r},${c}`, [Math.min(m, t[1] - sx + 1), t[1]]); }
-    // a support column overlaps the bridge (stalk) it may stand on or hold up: both meet at the middle
-    else if (p.role === 'support') { const m = Math.floor((t[0] + t[1] + 1) / 2); range.set(`${r},${c}`, [Math.max(t[0], m - Math.floor(sx / 2)), Math.max(t[0], m - Math.floor(sx / 2)) + sx - 1]); }
-    else range.set(`${r},${c}`, p.role === 'protrusion' ? t : rangeOf(r, c, p));
-  }
-  const rowCells = new Map<number, Map<number, number>>();   // row -> cell -> colour
-  const supportCell = new Set<string>();                     // `${row}:${cell}` clear supports
-  for (const r of rows) {
-    const cells = new Map<number, number>();
-    for (let c = 0; c < N; c++) {
-      const p = A.px[r][c]; if (!p) continue;
-      const [z0, z1] = range.get(`${r},${c}`)!;
-      for (let z = z0; z <= z1; z++) {
-        // thin parts show their colour through and through, except the glasses: their colour stays on the
-        // front edge, with the strap, arm or head behind it like the rest of the face
-        const colr = p.role === 'support' ? TRANS_CLEAR : (p.role !== 'body' && p.anchor !== 'front') || z <= z0 + S.front - 1 ? p.color : z < D / 2 ? p.fill : p.fillBack;
-        for (let i = 0; i < sx; i++) { cells.set(key(c * sx + i, z), colr); if (p.role === 'support') supportCell.add(`${r}:${key(c * sx + i, z)}`); }
-      }
-    }
-    // round the two back corners
-    for (let z = D - S.chamfer; z < D; z++) {
-      const xs = [...cells.keys()].filter(k => kz(k) === z).map(kx);
-      if (!xs.length) continue;
-      const lo = Math.min(...xs), hi = Math.max(...xs);
-      for (const x of xs) if (x < lo + S.chamfer || x > hi - S.chamfer) cells.delete(key(x, z));
-    }
-    rowCells.set(r, cells);
-  }
+  const { rows, rTop, rBot, rowCells, supportCell } = voxelize(grid, A, S);
 
   // ---------- 2. long overhangs get a clear support column ----------
   let columns = 0;
@@ -204,67 +163,136 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
     return out;
   };
 
-  // ---------- 5. layers of bricks and plates ----------
-  // A row is one brick (Mini) or brick+plate+plate (XL). If something in a
-  // row can't be held (a sideways detail in several colours), that row is
-  // rebuilt from three plates: same height, but the plates overlap sideways.
+  // ---------- 5. layers: bricks wherever the model allows, plates for the rest ----------
+  // Every pixel row keeps its exact height so pixels stay square: Mini rows alternate 3 and 2 plates
+  // (8 mm on average, a stud's width), XL rows are 5 plates (16 mm, two studs). Bricks are stacked every
+  // 3 plates through the whole height, whatever row they fall in: a stud cell takes a brick where the
+  // three plate levels it spans show one colour (or can't be seen), and plates only where they don't,
+  // mostly where the front changes colour from one row to the next. Fewest pieces, square pixels.
   const topRows = headwearRows(A.px, A.skin, rTop);
   const groupOf = (L: LayerRec): Piece['group'] => (L.row === null ? 'base' : topRows.has(L.row) ? 'top' : 'body');
   const occupied = (L: LayerRec) => new Set(L.pieces.flatMap(p => { const o: number[] = []; for (let i = 0; i < p.w; i++) for (let j = 0; j < p.d; j++) o.push(key(p.x + i, p.z + j)); return o; }));
+  const levelRow: number[] = [];   // plate level (from 0 at the base's top) -> pixel row
+  for (let r = rBot; r >= rTop; r--) {
+    const own = S.rowLayersAlt && (rBot - r) % 2 === 1 ? S.rowLayersAlt : S.rowLayers;
+    for (let i = 0, h = own.reduce((a, q) => a + q.h, 0); i < h; i++) levelRow.push(r);
+  }
+  const H = levelRow.length;
   const rowCellsCache = new Map<number, Layer>();
-  const makeLayers = (split: Set<number>, repairNotes: string[]): LayerRec[] => {
+  const levelCells = (y: number): Layer => {
+    const r = levelRow[y];
+    if (!rowCellsCache.has(r)) rowCellsCache.set(r, layerCells(r));
+    return rowCellsCache.get(r)!;
+  };
+  /** the brick a stud cell can take across plate levels y..y+2, or null if it needs plates there */
+  const brickCell = (y: number, k: number): { c: number; vis: boolean } | null => {
+    let seen = -1, any = -1;
+    for (let i = 0; i < 3; i++) {
+      const cell = levelCells(y + i).get(k);
+      if (!cell) return null;
+      any = cell.c;
+      if (cell.vis || COLOR_BY_ID.get(cell.c)?.trans) { if (seen >= 0 && seen !== cell.c) return null; seen = cell.c; }
+    }
+    return { c: seen >= 0 ? seen : any, vis: seen >= 0 };
+  };
+  // Where to start each brick level: going up, either lay a brick level here (3 plates tall) or a single
+  // plate level. Chosen for the fewest pieces overall, counting layer cells, with plates squeezed in
+  // among bricks counted a little dearer as they come out small. Busy rows keep bricks aligned to them;
+  // plain stretches run bricks straight through.
+  const brickAt: boolean[] = Array(H).fill(false);
+  {
+    const best = Array(H + 1).fill(0), pick = Array(H).fill(false);
+    for (let y = H - 1; y >= 0; y--) {
+      const plate = levelCells(y).size + best[y + 1];
+      let brick = Infinity;
+      if (y + 3 <= H) {
+        let bricks = 0, rest = 0;
+        for (const k of levelCells(y).keys()) if (brickCell(y, k)) bricks++;
+        for (let i = 0; i < 3; i++) rest += levelCells(y + i).size - bricks;
+        brick = bricks + 1.5 * rest + best[y + 3];
+      }
+      pick[y] = brick < plate; best[y] = Math.min(brick, plate);
+    }
+    for (let y = 0; y < H;) { if (pick[y]) { brickAt[y] = true; y += 3; } else y++; }
+  }
+  const baseBottom = -S.baseLayers.reduce((a, l) => a + l.h, 0);
+  const makeLayers = (platesAt: Set<string>, repairNotes: string[]): LayerRec[] => {
     const layers: LayerRec[] = [];
-    let y = -S.baseLayers.reduce((a, l) => a + l.h, 0);
-    for (const l of S.baseLayers) {
+    let y = baseBottom;
+    S.baseLayers.forEach((l, i) => {
       const cells: Layer = new Map();
       for (const k of baseCells) {
         const x = kx(k), z = kz(k);
         cells.set(k, { c: baseColor, vis: x === bx0 || x === bx1 || z === bz0 || z === bz1 });
       }
-      layers.push({ y, h: l.h, kind: l.kind, cells, row: null, pieces: [] }); y += l.h;
-    }
-    for (let r = rBot; r >= rTop; r--) {
-      if (!rowCellsCache.has(r)) rowCellsCache.set(r, layerCells(r));
-      const cells = rowCellsCache.get(r)!;
-      const own = S.rowLayersAlt && (rBot - r) % 2 === 1 ? S.rowLayersAlt : S.rowLayers;
-      const height = own.reduce((a, q) => a + q.h, 0);
-      const spec = split.has(r) ? Array.from({ length: height }, () => ({ kind: 'plate' as Kind, h: 1 })) : own;
-      for (const l of spec) { layers.push({ y, h: l.h, kind: l.kind, cells, row: r, pieces: [] }); y += l.h; }
-    }
-    layers.forEach((L, i) => {
-      L.pieces = tileLayer(L.cells, { kind: L.kind, y: L.y, h: L.h, prefX: i % 2 === 0, sizes: SIZES, below: i ? occupied(layers[i - 1]) : null, group: groupOf(L), allow });
+      layers.push({ y, h: l.h, kind: l.kind, cells, row: null, pieces: [], prefX: i % 2 === 0 }); y += l.h;
     });
+    let flip = false;
+    for (let y0 = 0; y0 < H;) {
+      const span = brickAt[y0] ? 3 : 1;
+      const bricks: Layer = new Map();
+      if (span === 3) for (const k of levelCells(y0).keys()) {
+        if (platesAt.has(`${y0}:${k}`)) continue;
+        const b = brickCell(y0, k);
+        if (b) bricks.set(k, b);
+      }
+      // each level runs its pieces the other way from the one below, so joints never line up
+      flip = !flip;
+      if (bricks.size) layers.push({ y: y0, h: 3, kind: 'brick', cells: bricks, row: levelRow[y0], pieces: [], prefX: flip });
+      for (let yy = y0; yy < y0 + span; yy++) {
+        const plates: Layer = new Map();
+        for (const [k, cell] of levelCells(yy)) if (!bricks.has(k)) plates.set(k, cell);
+        if (plates.size) layers.push({ y: yy, h: 1, kind: 'plate', cells: plates, row: levelRow[yy], pieces: [], prefX: yy === y0 ? flip : (yy - y0) % 2 === 1 ? !flip : flip });
+      }
+      y0 += span;
+    }
+    // bottom up: each layer rests on the pieces that end right under it
+    const ends = new Map<number, Set<number>>();
+    for (const L of layers) {
+      L.pieces = tileLayer(L.cells, { kind: L.kind, y: L.y, h: L.h, prefX: L.prefX, sizes: sizesFor(L.kind), below: L.y === baseBottom ? null : ends.get(L.y) ?? new Set(), group: groupOf(L), allow });
+      const top = L.y + L.h, set = ends.get(top) ?? new Set<number>();
+      occupied(L).forEach(k => set.add(k)); ends.set(top, set);
+    }
     // ---------- 6. repair anything that doesn't hold ----------
     repair(layers, repairNotes, groupOf, allow);
     return layers;
   };
-  const split = new Set<number>();
+  // Where something can't be held (a detail beside another colour, a corner hanging over nothing), the
+  // bricks around it in that brick level are swapped for plates, which can reach sideways to what holds
+  const slotOf: number[] = Array(H).fill(-1);
+  for (let y = 0; y < H; y++) if (brickAt[y]) for (let i = 0; i < 3; i++) slotOf[y + i] = y;
+  const platesAt = new Set<string>();
   let repairNotes: string[] = [];
-  let layers = makeLayers(split, repairNotes);
-  const rowsPerLayer = S.rowLayers.length;
-  for (let round = 0; round < 10 && rowsPerLayer === 1; round++) {
+  let layers = makeLayers(platesAt, repairNotes);
+  for (let round = 0; round < 12; round++) {
     const ps = layers.flatMap(L => L.pieces), { adj } = connections(ps), g = grounded(ps, adj);
-    const bad = new Set<number>();
-    layers.forEach(L => L.pieces.forEach(p => { if (L.row !== null && !g[ps.indexOf(p)] && !split.has(L.row)) bad.add(L.row); }));
-    if (!bad.size) break;
-    split.add(Math.max(...bad));   // lowest row first: its failure often causes the ones above
+    let more = 0;
+    for (const L of layers) if (L.row !== null && L.y >= 0 && slotOf[L.y] >= 0) for (const p of L.pieces) {
+      if (g[ps.indexOf(p)]) continue;
+      const y0 = slotOf[L.y];
+      for (let x = p.x - 2; x < p.x + p.w + 2; x++) for (let z = p.z - 2; z < p.z + p.d + 2; z++) {
+        const k = `${y0}:${key(x, z)}`;
+        if (!platesAt.has(k)) { platesAt.add(k); more++; }
+      }
+    }
+    if (!more) break;
     repairNotes = [];
-    layers = makeLayers(split, repairNotes);
+    layers = makeLayers(platesAt, repairNotes);
   }
   notes.push(...repairNotes);
-  if (split.size) notes.push(`${split.size} row${split.size > 1 ? 's' : ''} built from plates instead of bricks so side details interlock.`);
+  if (platesAt.size) notes.push(`${platesAt.size} stud${platesAt.size > 1 ? 's' : ''} built from plates instead of bricks so details interlock.`);
 
-  // ---------- 7. smooth tops: tiles, curved slopes on headwear ----------
+  // ---------- 7. smooth tops: tiles where nothing sits on top ----------
   const tops: Piece[] = [];
+  const occ = new Map(layers.map(L => [L, occupied(L)] as const));
   layers.forEach((L, i) => {
-    const next = layers[i + 1];
-    const nextRowHollow = next?.row != null ? hollow.get(next.row)! : new Set<number>();
-    const exposed: Layer = new Map();
-    const nextOcc = next ? occupied(next) : new Set<number>();
-    for (const [k, cell] of L.cells) if (!(next && (next.cells.has(k) || nextOcc.has(k) || nextRowHollow.has(k)))) exposed.set(k, { c: cell.c, vis: true });
-    if (!exposed.size) return;
     const top = L.y + L.h;
-    if (L.row === null && S.nameplate) {
+    const above = layers.filter(M => M.y === top);
+    const inside = top >= 0 && top < H ? hollow.get(levelRow[top]) ?? new Set<number>() : new Set<number>();
+    const exposed: Layer = new Map();
+    for (const [k, cell] of L.cells) if (!inside.has(k) && !above.some(M => M.cells.has(k) || occ.get(M)!.has(k))) exposed.set(k, { c: cell.c, vis: true });
+    if (!exposed.size) return;
+    if (L.row === null && S.nameplate && top === 0) {
       const [w, d] = S.nameplate, cx0 = Math.round((Math.min(...bottom.map(kx)) + Math.max(...bottom.map(kx)) + 1 - w) / 2);
       const z0 = -Math.ceil((S.baseMargin.front + d) / 2);
       let ok = true;
@@ -272,27 +300,6 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
       if (ok && (!allow || allow('tile', w, d, plateColor))) {
         for (let i2 = 0; i2 < w; i2++) for (let j = 0; j < d; j++) exposed.delete(key(cx0 + i2, z0 + j));
         tops.push({ x: cx0, z: z0, y: top, h: 1, w, d, c: plateColor, kind: 'tile', part: partId('tile', w, d), group: 'base', nameplate: true });
-      }
-    }
-    if (S.slopes && L.row !== null && topRows.has(L.row)) {
-      const blocks = new Map<string, number[]>();
-      for (const [k, cell] of exposed) if (cell.c !== BLACK && !COLOR_BY_ID.get(cell.c)?.trans) {
-        const b = `${Math.floor(kx(k) / 2)},${Math.floor(kz(k) / 2)}`; blocks.set(b, [...(blocks.get(b) ?? []), k]);
-      }
-      for (const [b, ks] of blocks) {
-        if (ks.length !== 4 || new Set(ks.map(k => exposed.get(k)!.c)).size !== 1) continue;
-        const [bx, bz] = b.split(',').map(Number), X = 2 * bx, Z = 2 * bz;
-        const f = (x: number, z: number) => L.cells.has(key(x, z));
-        const open: ('W' | 'E' | 'N' | 'S')[] = [];
-        if (!f(X - 1, Z) && !f(X - 1, Z + 1)) open.push('W');
-        if (!f(X + 2, Z) && !f(X + 2, Z + 1)) open.push('E');
-        if (!f(X, Z - 1) && !f(X + 1, Z - 1)) open.push('N');
-        if (!f(X, Z + 2) && !f(X + 1, Z + 2)) open.push('S');
-        if (open.length !== 1) continue;
-        const c = exposed.get(ks[0])!.c;
-        if (allow && !allow('slope', 2, 2, c)) continue;
-        ks.forEach(k => exposed.delete(k));
-        tops.push({ x: X, z: Z, y: top, h: 2, w: 2, d: 2, c, kind: 'slope', part: partId('slope', 2, 2), dir: open[0], group: groupOf(L) });
       }
     }
     tops.push(...tileLayer(exposed, { kind: 'tile', y: top, h: 1, prefX: i % 2 === 1, sizes: TILE_SIZES, group: groupOf(L), allow }));
@@ -345,6 +352,133 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
   return { size, pieces, steps: sortedSteps, bom, colors, checks, notes, dims };
 }
 
+/** Pixels → stud cells, one map per pixel row (cell → brick colour), with clear supports marked. */
+function voxelize(grid: PunkGrid, A: Analysis, S: SizeSpec) {
+  const { sx, D } = S;
+  const rows = [...Array(N).keys()].filter(r => A.px[r].some(Boolean));
+  const rTop = rows[0], rBot = rows[rows.length - 1];
+  const range = new Map<string, [number, number]>();
+  // a flat head reaches the middle of the depth, where the supports and bridges holding details sit
+  const headShape = grid.style?.head ?? 'round', flatBack = Math.floor(D / 2);
+  const rangeOf = (r: number, c: number, p: PixelInfo): [number, number] => {
+    // the front is always flat: the Alp, pixel for pixel. Behind it, the head takes its shape
+    if (p.role === 'body' && (p.part === PART.head || p.part === PART.glasses)) {
+      if (headShape === 'box') return [0, D - 1];
+      if (headShape === 'flat') return [0, flatBack];
+      // round: the back curves in towards the outline, like a quarter circle over the last few pixels
+      const k = Math.min(p.edge, ROUND_PX) / ROUND_PX;
+      return [0, Math.max(S.front, Math.round((D - 1) * Math.sqrt(1 - (1 - k) ** 2)))];
+    }
+    if (p.role === 'body') {
+      const inset = p.fromTop < 2 ? S.taper[p.fromTop] : 0;
+      return [0, D - 1 - inset];
+    }
+    const z0 = Math.round((D - S.slab) / 2); void r; void c;
+    // a flat head's thin bits stay within its depth
+    if (headShape === 'flat' && (p.part === PART.head || p.part === PART.glasses)) return [0, flatBack];
+    // thin bits of the glasses: flat on the front, and deep enough to reach the middle, where thin head
+    // parts resting on them sit
+    if (p.anchor === 'front') return [0, Math.max(S.frontSlab, z0 + S.slab) - 1];
+    return [z0, z0 + S.slab - 1];
+  };
+  for (const r of rows) for (let c = 0; c < N; c++) { const p = A.px[r][c]; if (p && !p.depthFrom) range.set(`${r},${c}`, rangeOf(r, c, p)); }
+  for (const r of rows) for (let c = 0; c < N; c++) {
+    const p = A.px[r][c]; if (!p || !p.depthFrom) continue;
+    const t = range.get(`${p.depthFrom[0]},${p.depthFrom[1]}`) ?? rangeOf(r, c, p);
+    if (p.role === 'stalk') { const m = Math.floor((t[0] + t[1] + 1) / 2); range.set(`${r},${c}`, [Math.min(m, t[1] - sx + 1), t[1]]); }
+    // a support column overlaps the bridge (stalk) it may stand on or hold up: both meet at the middle
+    else if (p.role === 'support') { const m = Math.floor((t[0] + t[1] + 1) / 2); range.set(`${r},${c}`, [Math.max(t[0], m - Math.floor(sx / 2)), Math.max(t[0], m - Math.floor(sx / 2)) + sx - 1]); }
+    else range.set(`${r},${c}`, p.role === 'protrusion' ? t : rangeOf(r, c, p));
+  }
+  const rowCells = new Map<number, Map<number, number>>();   // row -> cell -> colour
+  const supportCell = new Set<string>();                     // `${row}:${cell}` clear supports
+  for (const r of rows) {
+    const cells = new Map<number, number>();
+    for (let c = 0; c < N; c++) {
+      const p = A.px[r][c]; if (!p) continue;
+      const [z0, z1] = range.get(`${r},${c}`)!;
+      for (let z = z0; z <= z1; z++) {
+        // thin parts show their colour through and through, except the glasses: their colour stays on the
+        // front edge, with the strap, arm or head behind it like the rest of the face
+        const colr = p.role === 'support' ? TRANS_CLEAR : (p.role !== 'body' && p.anchor !== 'front') || z <= z0 + S.front - 1 ? p.color : z < D / 2 ? p.fill : p.fillBack;
+        for (let i = 0; i < sx; i++) { cells.set(key(c * sx + i, z), colr); if (p.role === 'support') supportCell.add(`${r}:${key(c * sx + i, z)}`); }
+      }
+    }
+    // round the two back corners
+    for (let z = D - S.chamfer; z < D; z++) {
+      const xs = [...cells.keys()].filter(k => kz(k) === z).map(kx);
+      if (!xs.length) continue;
+      const lo = Math.min(...xs), hi = Math.max(...xs);
+      for (const x of xs) if (x < lo + S.chamfer || x > hi - S.chamfer) cells.delete(key(x, z));
+    }
+    rowCells.set(r, cells);
+  }
+  if (grid.headModel) useHeadModel(grid.headModel, A, rowCells, sx, D);
+
+  // ---------- the glasses round the sides: the strap (or arms) meets the frame right behind the front,
+  // the strap's clip shows its A on both sides, and gnargles' arms hook down behind the ears ----------
+  const G = A.glasses;
+  if (G && !grid.headModel) {
+    const zGlyph = Math.max(1, sx), zEars = Math.floor(D / 2) - 1;
+    // only the solid head and the glasses themselves: loose details beside the head (rings, drips) keep
+    // their colour, which the pieces holding them rely on
+    const onHead = (r: number, x: number) => {
+      const p = A.px[r]?.[Math.floor(x / sx)];
+      return !!p && !p.depthFrom && (p.part === PART.glasses || (p.part === PART.head && p.role === 'body'));
+    };
+    const paint = (r: number, z: number, colour: number) => {
+      const cells = rowCells.get(r); if (!cells) return;
+      const xs = [...cells.keys()].filter(k => kz(k) === z && onHead(r, kx(k))).map(kx);
+      if (!xs.length) return;
+      for (const x of [Math.min(...xs), Math.max(...xs)]) cells.set(key(x, z), colour);
+    };
+    for (const r of G.rows) for (let z = 1; z <= (G.kind === 'strap' ? D - 1 : zEars); z++) {
+      const j = Math.floor((z - zGlyph) / sx);
+      paint(r, z, G.glyph && j >= 0 && j < 3 && G.glyph.pattern[r - G.rows[0]][j] ? G.glyph.color : G.color);
+    }
+    if (G.kind === 'arms') for (const r of [G.rows[0] + 1, G.rows[0] + 2]) for (let z = zEars - sx + 1; z <= zEars; z++) paint(r, z, G.color);
+  }
+
+  return { rows, rTop, rBot, rowCells, supportCell };
+}
+
+/** A hand-made head (a .vox model, see src/alps/vox.ts) replaces the automatic one: its voxels become the
+ * head's cells, the front keeping the Alp's own pixels. */
+function useHeadModel(m: HeadModel, A: Analysis, rowCells: Map<number, Map<number, number>>, sx: number, D: number) {
+  const brick = new Map<string, number>();
+  const colourOf = (rgb: RGB) => {
+    const k = rgb.join(',');
+    if (!brick.has(k)) brick.set(k, mapColors([{ rgb, count: 999 }], new Set())[0]);
+    return brick.get(k)!;
+  };
+  const onHead = (r: number, c: number) => { const p = A.px[r]?.[c]; return !!p && !p.depthFrom && (p.part === PART.head || p.part === PART.glasses); };
+  // out with the automatic head…
+  for (const [r, cells] of rowCells) for (const k of [...cells.keys()]) if (onHead(r, Math.floor(kx(k) / sx))) cells.delete(k);
+  // …in with the model's voxels, as deep as the builder allows
+  for (const v of m.voxels) {
+    const r = N - 1 - v.z, c = v.x;
+    if (r < 0 || r >= N || c < 0 || c >= N) continue;
+    const front = v.y === 0 && A.px[r][c] ? A.px[r][c]!.color : colourOf(v.rgb);
+    let cells = rowCells.get(r);
+    if (!cells) rowCells.set(r, cells = new Map());
+    for (let z = v.y * sx; z < Math.min(D, (v.y + 1) * sx); z++) for (let i = 0; i < sx; i++) cells.set(key(c * sx + i, z), front);
+  }
+}
+
+/** A head's automatic shape as a voxel model (Mini scale: one voxel per pixel), to start modelling from. */
+export function headVoxels(grid: PunkGrid): VoxModel {
+  // a hand-made head is exported as it is, to carry on from
+  if (grid.headModel) return { size: [N, Math.max(...grid.headModel.voxels.map(v => v.y)) + 1, N], voxels: grid.headModel.voxels };
+  const S = SIZES_SPEC.mini, A = analyze(grid), { rowCells } = voxelize({ ...grid, headModel: undefined }, A, S);
+  const voxels: VoxModel['voxels'] = [];
+  for (const [r, cells] of rowCells) for (const [k, c] of cells) {
+    const p = A.px[r][kx(k)];
+    if (!p || p.depthFrom || (p.part !== PART.head && p.part !== PART.glasses) || c === TRANS_CLEAR) continue;
+    voxels.push({ x: kx(k), y: kz(k), z: N - 1 - r, rgb: hexToRgb(COLOR_BY_ID.get(c)!.hex) });
+  }
+  return { size: [N, S.D, N], voxels };
+}
+
 /** Rows at the top built as a separate sub-assembly (a Punk's hat). An Alp's head is one piece with its
  * face, so none are. */
 function headwearRows(_px: (PixelInfo | null)[][], _skin: number, _rTop: number): Set<number> {
@@ -363,48 +497,51 @@ function repair(layers: LayerRec[], notes: string[], groupOf: (L: LayerRec) => P
   const gap = (p: Piece, q: Piece) => Math.max(0, q.x - p.x - p.w, p.x - q.x - q.w) + Math.max(0, q.z - p.z - p.d, p.z - q.z - q.d) + Math.abs(q.y - p.y) * 0.3;
   let pillars = 0;
 
+  // layers are found by height: several can share one (bricks and plates side by side)
+  const under = (y: number) => layers.filter(M => M.y + M.h === y);
+  const over = (y: number) => layers.filter(M => M.y === y);
+  const bottomY = Math.min(...layers.map(L => L.y));
+
   /** Try to attach floating piece P; returns true if fewer pieces float afterwards. */
   const attempt = (P: Piece, st: ReturnType<typeof floatingCount>): boolean => {
-    const Li = layers.findIndex(L => L.pieces.includes(P));
-    const groundedCells = (li: number) => {
+    const L = layers.find(M => M.pieces.includes(P))!;
+    const groundedCells = (Ls: LayerRec[]) => {
       const out = new Set<number>();
-      if (li < 0 || li >= layers.length) return out;
-      layers[li].pieces.forEach(p => { if (st.g[st.ps.indexOf(p)]) cellsOf(p).forEach(k => out.add(k)); });
+      for (const M of Ls) M.pieces.forEach(p => { if (st.g[st.ps.indexOf(p)]) cellsOf(p).forEach(k => out.add(k)); });
       return out;
     };
-    const retile = (li: number, priority: number[], below: Set<number>) => {
-      const L = layers[li], old = L.pieces;
+    const retile = (M: LayerRec, priority: number[], below: Set<number>) => {
+      const old = M.pieces;
       const region = old.filter(q => !q.support && near(P, q, 4));
       const cells: Layer = new Map();
-      region.forEach(q => cellsOf(q).forEach(k => cells.set(k, L.cells.get(k)!)));
-      const fresh = tileLayer(cells, { kind: L.kind, y: L.y, h: L.h, prefX: li % 2 === 0, sizes: SIZES, below, priority, group: groupOf(L), allow });
-      L.pieces = [...old.filter(q => !region.includes(q)), ...fresh];
-      return () => { L.pieces = old; };
+      region.forEach(q => cellsOf(q).forEach(k => cells.set(k, M.cells.get(k)!)));
+      const fresh = tileLayer(cells, { kind: M.kind, y: M.y, h: M.h, prefX: M.prefX, sizes: sizesFor(M.kind), below, priority, group: groupOf(M), allow });
+      M.pieces = [...old.filter(q => !region.includes(q)), ...fresh];
+      return () => { M.pieces = old; };
     };
+    const all = (undos: (() => void)[]) => (undos.length ? () => undos.reverse().forEach(u => u()) : null);
     const pc = new Set(cellsOf(P));
     const tries: (() => (() => void) | null)[] = [
       // same layer: a piece covering P's cells that rests on grounded pieces below
-      () => (Li > 0 ? retile(Li, [...pc], groundedCells(Li - 1)) : null),
-      // layer above: a piece over P that also sits on grounded pieces of P's layer
-      () => {
-        if (Li + 1 >= layers.length) return null;
-        const pri = [...layers[Li + 1].cells.keys()].filter(k => pc.has(k));
-        if (!pri.length) return null;
-        const g = groundedCells(Li); pc.forEach(k => g.delete(k));
-        return retile(Li + 1, pri, g);
-      },
-      // layer below: a grounded piece reaching under P
-      () => {
-        if (Li < 2) return null;
-        const pri = [...layers[Li - 1].cells.keys()].filter(k => pc.has(k));
-        if (!pri.length) return null;
-        return retile(Li - 1, pri, groundedCells(Li - 2));
-      },
+      () => (L.y > bottomY ? retile(L, [...pc], groundedCells(under(L.y))) : null),
+      // layers above: a piece over P that also sits on grounded pieces around it
+      () => all(over(L.y + L.h).flatMap(M => {
+        const pri = [...M.cells.keys()].filter(k => pc.has(k));
+        if (!pri.length) return [];
+        const g = groundedCells(under(M.y)); pc.forEach(k => g.delete(k));
+        return [retile(M, pri, g)];
+      })),
+      // layers below: a grounded piece reaching under P
+      () => all(under(L.y).flatMap(M => {
+        const pri = [...M.cells.keys()].filter(k => pc.has(k));
+        if (!pri.length || M.y <= bottomY) return [];
+        return [retile(M, pri, groundedCells(under(M.y)))];
+      })),
       // beside a grounded piece of another colour (a detail hanging off the side of a strand): set back
       // at the rear, one piece in P's colour reaches across into the neighbour
       () => {
-        const L = layers[Li], zBack = Math.max(...[...pc].map(kz));
-        const g = groundedCells(Li);
+        const zBack = Math.max(...[...pc].map(kz));
+        const g = groundedCells([L]);
         const pair = [...pc].filter(k => kz(k) === zBack)
           .flatMap(k => [-1, 1].map(dx => [k, key(kx(k) + dx, zBack)] as const))
           .find(([, n]) => g.has(n) && !pc.has(n) && L.cells.has(n));
@@ -412,7 +549,7 @@ function repair(layers: LayerRec[], notes: string[], groupOf: (L: LayerRec) => P
         const [own, n] = pair, cells = L.cells;
         L.cells = new Map(cells);
         L.cells.set(n, { c: cells.get(own)!.c, vis: cells.get(n)!.vis });
-        const undo = retile(Li, [own], Li > 0 ? groundedCells(Li - 1) : new Set());
+        const undo = retile(L, [own], L.y > bottomY ? groundedCells(under(L.y)) : new Set());
         return () => { undo(); L.cells = cells; };
       },
     ];
@@ -422,19 +559,22 @@ function repair(layers: LayerRec[], notes: string[], groupOf: (L: LayerRec) => P
       if (floatingCount().n < st.n) return true;
       undo();
     }
-    // support column under P, down to the first piece
+    // support column under P, one plate at a time down to the first piece
+    const covers = (y: number, k: number) => layers.some(M => M.y <= y && y < M.y + M.h && M.pieces.some(q => q.y <= y && y < q.y + q.h && cellsOf(q).includes(k)));
     for (const k of pc) {
-      const added: [LayerRec, Piece][] = [];
+      const added: [LayerRec, Piece][] = [], made: LayerRec[] = [];
       let ok = false;
-      for (let li = Li - 1; li >= 0; li--) {
-        const L = layers[li];
-        if (L.pieces.some(q => cellsOf(q).includes(k))) { ok = true; break; }
+      for (let y = P.y - 1; y >= bottomY; y--) {
+        if (covers(y, k)) { ok = true; break; }
+        let M = layers.find(M2 => M2.y === y && M2.h === 1);
+        if (!M) { M = { y, h: 1, kind: 'plate', cells: new Map(), row: L.row, pieces: [], prefX: false }; layers.push(M); made.push(M); }
         // an outline keeps going down in black; anything else gets a clear support
-        const p: Piece = { x: kx(k), z: kz(k), y: L.y, h: L.h, w: 1, d: 1, c: P.c === BLACK ? BLACK : TRANS_CLEAR, kind: L.kind, part: partId(L.kind, 1, 1), group: groupOf(L), support: true };
-        L.pieces.push(p); added.push([L, p]);
+        const p: Piece = { x: kx(k), z: kz(k), y, h: 1, w: 1, d: 1, c: P.c === BLACK ? BLACK : TRANS_CLEAR, kind: 'plate', part: partId('plate', 1, 1), group: groupOf(L), support: true };
+        M.pieces.push(p); added.push([M, p]);
       }
       if (ok && floatingCount().n < st.n) { pillars++; return true; }
-      for (const [L, p] of added) L.pieces.splice(L.pieces.indexOf(p), 1);
+      for (const [M, p] of added) M.pieces.splice(M.pieces.indexOf(p), 1);
+      for (const M of made) layers.splice(layers.indexOf(M), 1);
     }
     return false;
   };

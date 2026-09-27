@@ -2,6 +2,7 @@ import type { Model, SizeId } from './core/build';
 import type { PunkGrid } from './core/detect';
 import { alpCount, alpGrid, drawAlp, fetchSeed, GRID, randomSeed, seedFromParam, seedToParam, traitNames, TRAITS, type AlpSeed } from './alps/alps';
 import knownSeeds from './alps/seeds.json';
+import { hasHeadModel, withHeadModel } from './alps/heads';
 import { SKY, Viewer } from './viewer/scene';
 import { brickLinkXML, partsCSV } from './export/parts';
 import { brickLinkRemainderXML, orderSummary, pickABrickFiles } from './export/order';
@@ -65,7 +66,8 @@ async function buildSeed(s: AlpSeed, id: number | null) {
   setDesign(s);   // the designer starts from whatever's on show, ready to tweak
   $<HTMLInputElement>('alpno').value = id === null ? '' : String(id);
   history.replaceState(null, '', id === null ? `?seed=${seedToParam(s)}` : `?alp=${id}`);
-  await start(alpGrid(s));
+  $('head-model-note').textContent = hasHeadModel(s) ? 'This head is hand-modelled.' : 'This head’s shape is automatic.';
+  await start(await withHeadModel(alpGrid(s), s));
   viewer.setLabel(plateLabel());
 }
 
@@ -193,6 +195,12 @@ export const plateLabel = () => { const n = $<HTMLInputElement>('alpno').value.r
 $('alpno').addEventListener('input', () => viewer.setLabel(plateLabel()));  // the reader follows below
 
 // ---------- exports ----------
+$('dl-head').addEventListener('click', async () => {
+  if (!seed || !grid) return;
+  const [{ headVoxels }, { writeVox }] = await Promise.all([import('./core/build'), import('./alps/vox')]);
+  const { headName } = await import('./alps/alps');
+  save(new Blob([writeVox(headVoxels(grid)) as BlobPart], { type: 'application/octet-stream' }), `${headName(seed)}.vox`);
+});
 const current = () => models.get(mkey(size)) ?? null;
 const baseName = () => `${plateLabel() ? 'alp-' + plateLabel().slice(1) : 'my-alp'}-${size}`;
 function save(blob: Blob, name: string) {

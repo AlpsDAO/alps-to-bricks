@@ -1,9 +1,10 @@
 // Alps: 32×32 pixel characters whose traits (the "seed") live on Ethereum. An Alp's picture is drawn
 // from its seed with the same image data the token contract uses, so there's no image to read: the
 // grid is exact.
-import { PART, type PunkGrid } from '../core/detect';
+import { PART, type GridStyle, type HeadShape, type PunkGrid, type Wrap } from '../core/detect';
 import { hexToRgb, type RGB } from '../core/color';
 import imageData from './image-data.json';
+import traits3d from './traits3d.json';
 
 export const GRID = 32;
 
@@ -26,6 +27,24 @@ function paint(cells: number[][], parts: number[][], part: number, hex: string) 
   }
 }
 
+/** How each trait is modelled in 3D, by name without its prefix ("head-console-handheld" → "console-handheld") */
+const spec = traits3d as {
+  heads: Record<string, { shape: HeadShape }>;
+  accessories: Record<string, { wrap: Wrap }>;
+  bodies: Record<string, { wrap: Wrap }>;
+};
+const bare = (filename: string) => filename.replace(/^[a-z]+-/, '');
+/** The head's name without its prefix, as hand-made head files are named: "console-handheld" */
+export const headName = (seed: AlpSeed) => bare(imageData.images.heads[seed.head].filename);
+export function styleOf(seed: AlpSeed): GridStyle {
+  const { images } = imageData;
+  return {
+    head: spec.heads[bare(images.heads[seed.head].filename)]?.shape,
+    accessory: spec.accessories[bare(images.accessories[seed.accessory].filename)]?.wrap,
+    body: spec.bodies[bare(images.bodies[seed.body].filename)]?.wrap,
+  };
+}
+
 /** The Alp's pixels, in the same shape a detected Punk has. Colour indices point into `colors`. */
 export function alpGrid(seed: AlpSeed): PunkGrid {
   const pal = Array.from({ length: GRID }, () => Array(GRID).fill(0) as number[]);
@@ -44,7 +63,7 @@ export function alpGrid(seed: AlpSeed): PunkGrid {
     colors[k].count++;
     return k;
   }));
-  return { cells, colors, background: hexToRgb(`#${bgcolors[seed.background]}`), box: { x: 0, y: 0, size: GRID }, parts };
+  return { cells, colors, background: hexToRgb(`#${bgcolors[seed.background]}`), box: { x: 0, y: 0, size: GRID }, parts, style: styleOf(seed) };
 }
 
 /** Trait names, e.g. "head-console-handheld" → "Console handheld". */

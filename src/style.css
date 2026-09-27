@@ -32,6 +32,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   background: radial-gradient(circle at 30% 30%, #fff3 0 2.5px, transparent 3px) 0 0/9px 7px, var(--navy); }
 .tag { color: var(--muted); font-size: 14px; font-weight: 600; text-decoration: none; }
 .tag:hover { color: var(--ink); }
+.model-note { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
 h1, h2 { font-family: 'Londrina Solid', sans-serif; font-weight: 400; letter-spacing: 0.01em; }
 
 main { max-width: 1080px; margin: 0 auto; padding: 0 16px 32px; }

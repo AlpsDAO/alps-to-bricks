@@ -12,3 +12,10 @@ export const elementId = (part: string, color: number): string | null => TABLE[`
 export const availableAtLego = (kind: Kind, w: number, d: number, color: number) => {
   try { return elementId(partId(kind, w, d), color) !== null; } catch { return false; }
 };
+
+const MADE = new Set((data as { made?: string[] }).made ?? []);
+/** Whether a part was ever made in this colour (so BrickLink shops can have it): not every size exists
+ * in every colour, e.g. a 2×8 brick in only 26 of our 38 */
+export const madeInColour = (kind: Kind, w: number, d: number, color: number) => {
+  try { return MADE.has(`${partId(kind, w, d)}|${color}`); } catch { return false; }
+};

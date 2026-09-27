@@ -68,7 +68,7 @@ export interface PunkColor { rgb: RGB; count: number }
  * resolves clashes: two clearly different Punk colours that touch each other
  * must not collapse into the same brick colour (e.g. skin vs. beard).
  */
-export function mapColors(colors: PunkColor[], touching: Set<string>): number[] {
+export function mapColors(colors: PunkColor[], touching: Set<string>, mustDiffer: Set<string> = new Set()): number[] {
   const labs = colors.map(c => rgbToLab(c.rgb));
   const ranked = colors.map((c, i) => {
     const pure = c.rgb[0] < 8 && c.rgb[1] < 8 && c.rgb[2] < 8;
@@ -83,12 +83,14 @@ export function mapColors(colors: PunkColor[], touching: Set<string>): number[] 
     let changed = false;
     for (let i = 0; i < colors.length; i++) for (let j = i + 1; j < colors.length; j++) {
       if (ranked[i][pick[i]].id !== ranked[j][pick[j]].id) continue;
-      if (!touching.has(key(i, j)) || deltaE(labs[i], labs[j]) < 8) continue;
+      // a symbol's colours (the A on a goggle clip) must stay apart however close their shades are
+      const must = mustDiffer.has(key(i, j));
+      if (!must && (!touching.has(key(i, j)) || deltaE(labs[i], labs[j]) < 8)) continue;
       // move whichever colour loses least by going to its next free choice
       const next = (k: number) => {
         for (let p = pick[k] + 1; p < ranked[k].length; p++) {
           const id = ranked[k][p].id;
-          const clash = colors.some((_, m) => m !== k && touching.has(key(k, m)) && ranked[m][pick[m]].id === id && deltaE(labs[k], labs[m]) >= 8);
+          const clash = colors.some((_, m) => m !== k && ranked[m][pick[m]].id === id && (mustDiffer.has(key(k, m)) || (touching.has(key(k, m)) && deltaE(labs[k], labs[m]) >= 8)));
           if (!clash) return p;
         }
         return -1;
@@ -100,7 +102,8 @@ export function mapColors(colors: PunkColor[], touching: Set<string>): number[] 
       const cost = (k: number, n: number) => {
         if (n < 0) return Infinity;
         const extra = ranked[k][n].d - ranked[k][pick[k]].d;
-        return extra > (colors[k].count <= 6 ? 25 : MAX_EXTRA) ? Infinity : extra * colors[k].count;
+        const limit = must ? 45 : colors[k].count <= 6 ? 25 : MAX_EXTRA;
+        return extra > limit ? Infinity : extra * colors[k].count;
       };
       const ci = cost(i, ni), cj = cost(j, nj);
       if (ci === Infinity && cj === Infinity) continue;
