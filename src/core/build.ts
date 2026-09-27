@@ -199,8 +199,14 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
   // plate level. Chosen for the fewest pieces overall, counting layer cells, with plates squeezed in
   // among bricks counted a little dearer as they come out small. Busy rows keep bricks aligned to them;
   // plain stretches run bricks straight through.
-  const brickAt: boolean[] = Array(H).fill(false);
-  {
+  // 'free' places brick levels anywhere; 'rows' only at the start of a row tall enough for one (a brick,
+  // then plates to finish the row), the fallback for the rare model that free stacking can't hold
+  const brickLevels = (mode: 'free' | 'rows'): boolean[] => {
+    const brickAt: boolean[] = Array(H).fill(false);
+    if (mode === 'rows') {
+      for (let y = 0; y < H; y++) if ((y === 0 || levelRow[y - 1] !== levelRow[y]) && levelRow[y + 2] === levelRow[y]) brickAt[y] = true;
+      return brickAt;
+    }
     const best = Array(H + 1).fill(0), pick = Array(H).fill(false);
     for (let y = H - 1; y >= 0; y--) {
       const plate = levelCells(y).size + best[y + 1];
@@ -214,9 +220,10 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
       pick[y] = brick < plate; best[y] = Math.min(brick, plate);
     }
     for (let y = 0; y < H;) { if (pick[y]) { brickAt[y] = true; y += 3; } else y++; }
-  }
+    return brickAt;
+  };
   const baseBottom = -S.baseLayers.reduce((a, l) => a + l.h, 0);
-  const makeLayers = (platesAt: Set<string>, repairNotes: string[]): LayerRec[] => {
+  const makeLayers = (brickAt: boolean[], platesAt: Set<string>, repairNotes: string[]): LayerRec[] => {
     const layers: LayerRec[] = [];
     let y = baseBottom;
     S.baseLayers.forEach((l, i) => {
@@ -259,11 +266,13 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
   };
   // Where something can't be held (a detail beside another colour, a corner hanging over nothing), the
   // bricks around it in that brick level are swapped for plates, which can reach sideways to what holds
+  const stack = (mode: 'free' | 'rows') => {
+  const brickAt = brickLevels(mode);
   const slotOf: number[] = Array(H).fill(-1);
   for (let y = 0; y < H; y++) if (brickAt[y]) for (let i = 0; i < 3; i++) slotOf[y + i] = y;
   const platesAt = new Set<string>();
   let repairNotes: string[] = [];
-  let layers = makeLayers(platesAt, repairNotes);
+  let layers = makeLayers(brickAt, platesAt, repairNotes);
   for (let round = 0; round < 12; round++) {
     const ps = layers.flatMap(L => L.pieces), { adj } = connections(ps), g = grounded(ps, adj);
     let more = 0;
@@ -277,9 +286,15 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
     }
     if (!more) break;
     repairNotes = [];
-    layers = makeLayers(platesAt, repairNotes);
+    layers = makeLayers(brickAt, platesAt, repairNotes);
   }
-  notes.push(...repairNotes);
+  const ps = layers.flatMap(L => L.pieces), loose = grounded(ps, connections(ps).adj).filter(v => !v).length;
+  return { layers, repairNotes, platesAt, loose };
+  };
+  let st = stack('free');
+  if (st.loose) { const rowsAligned = stack('rows'); if (rowsAligned.loose < st.loose) st = rowsAligned; }
+  const { layers, platesAt } = st;
+  notes.push(...st.repairNotes);
   if (platesAt.size) notes.push(`${platesAt.size} stud${platesAt.size > 1 ? 's' : ''} built from plates instead of bricks so details interlock.`);
 
   // ---------- 7. smooth tops: tiles where nothing sits on top ----------
