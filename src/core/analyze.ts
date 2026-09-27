@@ -1,7 +1,7 @@
 // Pixel-level understanding of an Alp: which pixels form the solid head and body,
 // which stick out (antennae, stems, glasses arms), which float and need a
 // support, and which colour each pixel shows on the sides and back of the bust.
-import type { PunkGrid } from './detect';
+import { PART, type PunkGrid } from './detect';
 import { mapColors } from './palette';
 import { BLACK, COLOR_BY_ID, TRANS_CLEAR } from './palette';
 
@@ -21,6 +21,8 @@ export interface PixelInfo {
   fillBack: number;         // colour of the inside/sides, back half
   /** for supports and floating details: the pixel whose depth they copy */
   depthFrom?: [number, number];
+  /** which trait drew it (PART), -1 if unknown */
+  part: number;
 }
 
 export interface Analysis {
@@ -63,6 +65,7 @@ export function analyze(g: PunkGrid): Analysis {
   const support: boolean[][] = Array.from({ length: N }, () => Array(N).fill(false));
   const depthFrom = new Map<string, [number, number]>();
   const stalk = new Map<string, number>();   // sideways bridge pixel -> colour
+  const bridgedInto = new Map<string, number>();   // the attached pixel a bridge reaches into -> its colour
   const detached = comps.map((l, i) => ({ l, i })).filter(o => o.i !== main)
     .sort((a, b) => Math.max(...b.l.map(p => p[0])) - Math.max(...a.l.map(p => p[0])));   // lowest first
   for (const { l } of detached) {
@@ -103,6 +106,8 @@ export function analyze(g: PunkGrid): Analysis {
       attached[r][c] = true; depthFrom.set(`${r},${c}`, hit);
     }
     for (const [r, c] of l) { attached[r][c] = true; depthFrom.set(`${r},${c}`, hit); }
+    // the bridge enters the pixel it hangs from at the back, so that pixel's back takes the bridge's colour
+    if (stalks) bridgedInto.set(`${hit[0]},${hit[1]}`, detailColor);
     const how = [n ? `${n} clear support block${n > 1 ? 's' : ''}` : '', stalks ? `a ${stalks}-pixel bridge set back behind it` : ''].filter(Boolean).join(' and ');
     notes.push(`${l.length} floating pixel${l.length > 1 ? 's' : ''} (row ${l[0][0] + 1}) held by ${how}.`);
   }
@@ -128,6 +133,25 @@ export function analyze(g: PunkGrid): Analysis {
     tally.set(k, (tally.get(k) ?? 0) + 1);
   }
   const skin = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? brickOf[0];
+  // the body's own colour (under any accessory), for the back of the torso
+  const partOf = (r: number, c: number) => g.parts?.[r]?.[c] ?? -1;
+  const bodyTally = new Map<number, number>();
+  for (let r = BODY_TOP; r < N; r++) for (let c = 0; c < N; c++) if (partOf(r, c) === PART.body) bodyTally.set(col(r, c), (bodyTally.get(col(r, c)) ?? 0) + 1);
+  const bodyColor = [...bodyTally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  // ---- glasses: Alps' goggles carry a pixel "A" on the strap clip (rows 12–14, columns 7–9), in the
+  // strap's colour; the strap wraps the sides and back of the head at those rows. Noggles-style frames
+  // ("gnargles") have a ⌐ arm there instead, which runs back along the sides to about the ears. ----
+  const glassesPx = (r: number, c: number) => partOf(r, c) === PART.glasses;
+  let band: { rows: number[]; color: number; back: boolean } | null = null;
+  {
+    const at = (i: number, j: number) => (glassesPx(12 + i, 7 + j) ? g.cells[12 + i][7 + j] : -2);
+    const clip = at(0, 0), glyph = at(0, 1);
+    const A = [[0, 1, 0], [1, 0, 1], [1, 0, 1]];
+    if (clip >= 0 && glyph >= 0 && clip !== glyph && A.every((row, i) => row.every((v, j) => at(i, j) === (v ? glyph : clip)))) {
+      band = { rows: [12, 13, 14], color: brickOf[clip], back: true };
+    } else if (glassesPx(13, 7)) band = { rows: [13], color: col(13, 7), back: false };
+  }
 
   // outline pixels: black on the edge of the Punk, or thin black lines
   const lineBlack = (r: number, c: number) => {
@@ -150,30 +174,40 @@ export function analyze(g: PunkGrid): Analysis {
     for (let c = 0; c < N; c++) {
       if (!attached[r][c]) { row.push(null); continue; }
       if (support[r][c]) {
-        row.push({ color: TRANS_CLEAR, role: 'support', anchor: 'center', fromTop: 0, fill: TRANS_CLEAR, fillBack: TRANS_CLEAR, depthFrom: depthFrom.get(`${r},${c}`) });
+        row.push({ color: TRANS_CLEAR, role: 'support', anchor: 'center', fromTop: 0, fill: TRANS_CLEAR, fillBack: TRANS_CLEAR, depthFrom: depthFrom.get(`${r},${c}`), part: -1 });
         continue;
       }
       if (stalk.has(`${r},${c}`)) {
         const k = stalk.get(`${r},${c}`)!;
-        row.push({ color: k, role: 'stalk', anchor: 'center', fromTop: 0, fill: k, fillBack: k, depthFrom: depthFrom.get(`${r},${c}`) });
+        row.push({ color: k, role: 'stalk', anchor: 'center', fromTop: 0, fill: k, fillBack: k, depthFrom: depthFrom.get(`${r},${c}`), part: -1 });
         continue;
       }
+      const part = partOf(r, c);
+      const onHead = part === PART.head || part === PART.glasses;
+      // the sides show a nearby colour of the same row; the glasses only show on the front (behind the
+      // frame's front edge it's the head, apart from the strap or arms below)
+      const sideOk = (rr: number, cc: number) => fillable(rr, cc) && !(onHead && partOf(rr, cc) === PART.glasses);
       let fill = skin;
-      if (fillable(r, c)) fill = col(r, c);
-      else {
+      if (sideOk(r, c)) fill = col(r, c);
+      else if (part !== PART.glasses) {
         for (let d = 1; d < N; d++) {
           const order = c < N / 2 ? [c + d, c - d] : [c - d, c + d];
-          const hit = order.find(cc => inside(r, cc) && fillable(r, cc));
+          const hit = order.find(cc => inside(r, cc) && sideOk(r, cc));
           if (hit !== undefined) { fill = col(r, hit); break; }
         }
       }
-      // front-facing: the back shows what the front does
-      const fillBack = fill;
+      // the back of the head shows the head's colour and the back of the torso the body's, not the face
+      // or the accessory; without trait info the back shows what the front does
+      let fillBack = onHead ? skin : (part === PART.body || part === PART.accessory) && bodyColor !== undefined ? bodyColor : fill;
+      // the goggle strap (or the noggles' arms) along the sides, and the strap across the back
+      if (onHead && band?.rows.includes(r)) { fill = band.color; if (band.back) fillBack = band.color; }
+      fillBack = bridgedInto.get(`${r},${c}`) ?? fillBack;
       let fromTop = 0;
       while (r - fromTop - 1 >= 0 && solid(r - fromTop - 1, c)) fromTop++;
       const isBody = body(r, c);
-      const anchor = 'center';
-      row.push({ color: col(r, c), role: isBody ? 'body' : 'protrusion', anchor, fromTop, fill, fillBack, depthFrom: depthFrom.get(`${r},${c}`) });
+      // thin bits of the glasses stay on the front, so the A logo and frames read flat
+      const anchor = !isBody && part === PART.glasses ? 'front' : 'center';
+      row.push({ color: col(r, c), role: isBody ? 'body' : 'protrusion', anchor, fromTop, fill, fillBack, depthFrom: depthFrom.get(`${r},${c}`), part });
     }
     px.push(row);
   }

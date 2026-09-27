@@ -1,6 +1,6 @@
 import type { Model, SizeId } from './core/build';
 import type { PunkGrid } from './core/detect';
-import { alpCount, alpGrid, drawAlp, fetchSeed, GRID, traitNames, type AlpSeed } from './alps/alps';
+import { alpCount, alpGrid, drawAlp, fetchSeed, GRID, randomSeed, seedFromParam, seedToParam, traitNames, TRAITS, type AlpSeed } from './alps/alps';
 import knownSeeds from './alps/seeds.json';
 import { SKY, Viewer } from './viewer/scene';
 import { brickLinkXML, partsCSV } from './export/parts';
@@ -39,6 +39,8 @@ alpCount().then(n => { if (n - 1 > latest) { latest = n - 1; showLatest(); } }, 
 const seedOf = (id: number): Promise<AlpSeed> => (known[id] ? Promise.resolve(seedFrom(known[id])) : fetchSeed(id));
 
 let seed: AlpSeed | null = null;
+/** the Alp on show: a minted one (id) or a design */
+let showing: { id: number | null; seed: AlpSeed } | null = null;
 async function buildAlp(id: number) {
   showError(null); $('result').hidden = false;
   $('sec-bust').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -52,13 +54,51 @@ async function buildAlp(id: number) {
       : 'We couldn’t reach Ethereum to read this Alp. Check your connection and try again.');
     return;
   }
-  seed = s;
   $<HTMLInputElement>('alp-number').value = String(id);
-  $<HTMLInputElement>('alpno').value = String(id);
-  history.replaceState(null, '', `?alp=${id}`);
+  await buildSeed(s, id);
+}
+/** Build any Alp from its traits: a minted one (with its number) or a design */
+async function buildSeed(s: AlpSeed, id: number | null) {
+  showError(null); $('result').hidden = false;
+  $('sec-bust').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  seed = s; showing = { id, seed: s };
+  setDesign(s);   // the designer starts from whatever's on show, ready to tweak
+  $<HTMLInputElement>('alpno').value = id === null ? '' : String(id);
+  history.replaceState(null, '', id === null ? `?seed=${seedToParam(s)}` : `?alp=${id}`);
   await start(alpGrid(s));
   viewer.setLabel(plateLabel());
 }
+
+// ---------- design your own: any head, glasses, body, accessory and background ----------
+let design: AlpSeed = randomSeed();
+const rows = $('trait-rows');
+for (const t of TRAITS) {
+  const row = document.createElement('div'); row.className = 'trait-row';
+  const label = document.createElement('label'); label.htmlFor = `t-${t.key}`; label.textContent = t.label;
+  const select = document.createElement('select'); select.id = `t-${t.key}`;
+  t.names.forEach((n, i) => select.add(new Option(n, String(i))));
+  select.addEventListener('change', () => setDesign({ ...design, [t.key]: +select.value }));
+  const step = (d: number, text: string) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'step'; b.textContent = text;
+    b.setAttribute('aria-label', `${d < 0 ? 'Previous' : 'Next'} ${t.label.toLowerCase()}`);
+    b.addEventListener('click', () => setDesign({ ...design, [t.key]: (design[t.key] + d + t.names.length) % t.names.length }));
+    return b;
+  };
+  row.append(label, step(-1, '‹'), select, step(1, '›'));
+  rows.append(row);
+}
+function setDesign(s: AlpSeed) {
+  design = s;
+  for (const t of TRAITS) $<HTMLSelectElement>(`t-${t.key}`).value = String(s[t.key]);
+  drawAlp($<HTMLCanvasElement>('design-preview'), alpGrid(s));
+}
+setDesign(design);
+$('shuffle').addEventListener('click', () => setDesign(randomSeed()));
+$('build-design').addEventListener('click', () => {
+  // a design that matches a minted Alp is that Alp
+  const p = seedToParam(design), id = Object.keys(known).find(k => seedToParam(seedFrom(known[k])) === p);
+  buildSeed(design, id === undefined ? null : +id);
+});
 $('by-number').addEventListener('submit', e => {
   e.preventDefault();
   const raw = $<HTMLInputElement>('alp-number').value.trim();
@@ -390,14 +430,16 @@ const secObserver = new IntersectionObserver(es => {
 ['sec-bust', 'sec-manual', 'sec-buy'].forEach(id => secObserver.observe($(id)));
 function renderBustSub() {
   const m = current(); if (!m) return;
-  $('bust-sub').textContent = `${plateLabel() ? `Alp ${plateLabel()} · ` : ''}${m.size === 'xl' ? 'XL' : 'Mini'} · built and checked in your browser`;
+  const who = plateLabel() ? `Alp ${plateLabel()} · ` : showing?.id === null ? 'Your design · ' : '';
+  $('bust-sub').textContent = `${who}${m.size === 'xl' ? 'XL' : 'Mini'} · built and checked in your browser`;
 }
 function shareLink() {
   const m = current(), label = plateLabel();
+  const designed = showing?.id === null;
   const text = m
-    ? `I turned ${label ? `Alp ${label}` : 'my Alp'} into a ${m.checks.pieces.toLocaleString('en')}-piece brick bust you can really build 🧱\n\nMade with Alps to Bricks`
+    ? `I ${designed ? 'designed an Alp and turned it' : `turned ${label ? `Alp ${label}` : 'my Alp'}`} into a ${m.checks.pieces.toLocaleString('en')}-piece brick bust you can really build 🧱\n\nMade with Alps to Bricks`
     : 'Turn your Alp into a brick bust you can really build 🧱';
-  const url = location.origin + location.pathname + (label ? `?alp=${label.slice(1)}` : '');
+  const url = location.origin + location.pathname + (showing ? (designed ? `?seed=${seedToParam(showing.seed)}` : `?alp=${showing.id}`) : '');
   $<HTMLAnchorElement>('share-x').href = `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
 }
 $('share-x').addEventListener('pointerdown', shareLink);
@@ -414,10 +456,12 @@ for (const id of [0, 12, 42, 49, 146, 154, 213, 261, 272, 275, 276, 277].filter(
   $('examples').append(b);
 }
 setSize(size);
-// a shared link (?alp=277) builds that Alp straight away
+// a shared link builds that Alp straight away: ?alp=277 for a minted Alp, ?seed=… for a design (the
+// Playground on alps.wtf links here with ?seed=)
 {
-  const n = new URLSearchParams(location.search).get('alp');
+  const q = new URLSearchParams(location.search), n = q.get('alp'), s = q.get('seed') && seedFromParam(q.get('seed')!);
   if (n && /^\d{1,5}$/.test(n)) buildAlp(+n);
+  else if (s) buildSeed(s, null);
 }
 
 // dev/test hook: lets scripts drive the viewer frame by frame

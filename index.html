@@ -30,7 +30,7 @@
   <main>
     <section class="hero">
       <h1>Turn your Alp into a brick bust you can really build</h1>
-      <p class="lede">Type your Alp’s number. You get a 3D build animation, step-by-step instructions and your parts list, ready to order.</p>
+      <p class="lede">Type your Alp’s number, or design your own from every head, pair of glasses, body and accessory. You get a 3D build animation, step-by-step instructions and your parts list, ready to order.</p>
     </section>
 
     <section class="panel" id="input-panel">
@@ -44,6 +44,18 @@
           </div>
           <span class="drop-sub" id="num-help">Any Alp from 0 to <span id="latest">the latest</span> · <button type="button" class="linkbtn" id="random">Surprise me</button></span>
         </form>
+        <span class="or" aria-hidden="true">or</span>
+        <div class="designer" id="designer">
+          <span class="drop-title">Design your own</span>
+          <div class="design-body">
+            <canvas id="design-preview" width="32" height="32" aria-label="Your design"></canvas>
+            <div class="trait-rows" id="trait-rows"></div>
+          </div>
+          <div class="design-actions">
+            <button type="button" class="ghost" id="shuffle">Shuffle</button>
+            <button type="button" class="go" id="build-design">Build this Alp</button>
+          </div>
+        </div>
       </div>
       <p class="privacy"><strong>Everything runs in your browser.</strong> Your Alp is drawn from its traits on Ethereum, the same way the Alps contract draws it: no upload, no server, no AI.</p>
       <div class="examples">

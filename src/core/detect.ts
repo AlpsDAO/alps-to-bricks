@@ -11,7 +11,12 @@ export interface PunkGrid {
   background: RGB | null;
   /** where the Punk was found, in source image pixels */
   box: { x: number; y: number; size: number };
+  /** which trait drew each pixel, when known (Alps): see PART; -1 = empty */
+  parts?: number[][];
 }
+
+/** Alps' traits, in drawing order */
+export const PART = { body: 0, accessory: 1, head: 2, glasses: 3 } as const;
 
 export class DetectError extends Error {
   constructor(public code: 'no-punk' | 'not-grid' | 'empty', message: string) { super(message); }

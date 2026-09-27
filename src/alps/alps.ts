@@ -1,7 +1,7 @@
 // Alps: 32×32 pixel characters whose traits (the "seed") live on Ethereum. An Alp's picture is drawn
 // from its seed with the same image data the token contract uses, so there's no image to read: the
 // grid is exact.
-import type { PunkGrid } from '../core/detect';
+import { PART, type PunkGrid } from '../core/detect';
 import { hexToRgb, type RGB } from '../core/color';
 import imageData from './image-data.json';
 
@@ -12,15 +12,15 @@ export interface AlpSeed { background: number; body: number; accessory: number; 
 const TOKEN = '0xf59eB3e1957F120f7C135792830F900685536f52';
 const RPCS = ['https://ethereum-rpc.publicnode.com', 'https://eth.llamarpc.com', 'https://rpc.ankr.com/eth'];
 
-/** Paint one run-length-encoded trait image onto the grid (0 = transparent). */
-function paint(cells: number[][], hex: string) {
+/** Paint one run-length-encoded trait image onto the grid (0 = transparent), noting which trait drew each pixel. */
+function paint(cells: number[][], parts: number[][], part: number, hex: string) {
   const b = hex.slice(2).match(/../g)!.map(h => parseInt(h, 16));
   const [, top, right, , left] = b;
   let x = left, y = top;
   for (let i = 5; i + 1 < b.length; i += 2) {
     const [length, color] = [b[i], b[i + 1]];
     for (let n = 0; n < length; n++) {
-      if (color !== 0) cells[y][x] = color;
+      if (color !== 0) { cells[y][x] = color; parts[y][x] = part; }
       if (++x === right) { x = left; y++; }
     }
   }
@@ -29,11 +29,12 @@ function paint(cells: number[][], hex: string) {
 /** The Alp's pixels, in the same shape a detected Punk has. Colour indices point into `colors`. */
 export function alpGrid(seed: AlpSeed): PunkGrid {
   const pal = Array.from({ length: GRID }, () => Array(GRID).fill(0) as number[]);
+  const parts = Array.from({ length: GRID }, () => Array(GRID).fill(-1) as number[]);
   const { images, palette, bgcolors } = imageData;
-  paint(pal, images.bodies[seed.body].data);
-  paint(pal, images.accessories[seed.accessory].data);
-  paint(pal, images.heads[seed.head].data);
-  paint(pal, images.glasses[seed.glasses].data);
+  paint(pal, parts, PART.body, images.bodies[seed.body].data);
+  paint(pal, parts, PART.accessory, images.accessories[seed.accessory].data);
+  paint(pal, parts, PART.head, images.heads[seed.head].data);
+  paint(pal, parts, PART.glasses, images.glasses[seed.glasses].data);
   const index = new Map<number, number>();
   const colors: { rgb: RGB; count: number }[] = [];
   const cells = pal.map(row => row.map(p => {
@@ -43,19 +44,42 @@ export function alpGrid(seed: AlpSeed): PunkGrid {
     colors[k].count++;
     return k;
   }));
-  return { cells, colors, background: hexToRgb(`#${bgcolors[seed.background]}`), box: { x: 0, y: 0, size: GRID } };
+  return { cells, colors, background: hexToRgb(`#${bgcolors[seed.background]}`), box: { x: 0, y: 0, size: GRID }, parts };
 }
 
 /** Trait names, e.g. "head-console-handheld" → "Console handheld". */
+const traitName = (f: string) => { const s = f.replace(/^[a-z]+-/, '').replace(/-/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1); };
 export function traitNames(seed: AlpSeed) {
-  const name = (f: string) => { const s = f.replace(/^[a-z]+-/, '').replace(/-/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1); };
   const { images } = imageData;
   return {
-    head: name(images.heads[seed.head].filename),
-    glasses: name(images.glasses[seed.glasses].filename),
-    body: name(images.bodies[seed.body].filename),
-    accessory: name(images.accessories[seed.accessory].filename),
+    head: traitName(images.heads[seed.head].filename),
+    glasses: traitName(images.glasses[seed.glasses].filename),
+    body: traitName(images.bodies[seed.body].filename),
+    accessory: traitName(images.accessories[seed.accessory].filename),
   };
+}
+
+/** Every trait an Alp can have, for designing your own: in the order they're picked */
+export const TRAITS: { key: keyof AlpSeed; label: string; names: string[] }[] = [
+  { key: 'head', label: 'Head', names: imageData.images.heads.map(i => traitName(i.filename)) },
+  { key: 'glasses', label: 'Glasses', names: imageData.images.glasses.map(i => traitName(i.filename)) },
+  { key: 'body', label: 'Body', names: imageData.images.bodies.map(i => traitName(i.filename)) },
+  { key: 'accessory', label: 'Accessory', names: imageData.images.accessories.map(i => traitName(i.filename)) },
+  // the same names the Playground uses
+  { key: 'background', label: 'Background', names: ['Bluebird sky', 'Evergreen', 'Night', 'Slate', 'Yellow snow', 'Cool', 'Warm'] },
+];
+
+export const randomSeed = (): AlpSeed =>
+  Object.fromEntries(TRAITS.map(t => [t.key, Math.floor(Math.random() * t.names.length)])) as unknown as AlpSeed;
+
+/** A seed in a link, in the contract's order: ?seed=background-body-accessory-head-glasses */
+const ORDER: (keyof AlpSeed)[] = ['background', 'body', 'accessory', 'head', 'glasses'];
+export const seedToParam = (s: AlpSeed) => ORDER.map(k => s[k]).join('-');
+export function seedFromParam(p: string): AlpSeed | null {
+  const v = p.split('-').map(Number);
+  if (v.length !== 5 || v.some(n => !Number.isInteger(n) || n < 0)) return null;
+  const seed = Object.fromEntries(ORDER.map((k, i) => [k, v[i]])) as unknown as AlpSeed;
+  return TRAITS.every(t => seed[t.key] < t.names.length) ? seed : null;
 }
 
 async function ethCall(data: string): Promise<string> {

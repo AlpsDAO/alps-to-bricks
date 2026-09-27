@@ -1,7 +1,7 @@
 // Punk grid -> buildable brick model (Mini or XL).
 import { analyze, N, type PixelInfo } from './analyze';
 import { checkModel, connections, grounded, type Checks } from './check';
-import type { PunkGrid } from './detect';
+import { PART, type PunkGrid } from './detect';
 import { BASE_GRAY, BLACK, COLOR_BY_ID, mapColors, TRANS_CLEAR } from './palette';
 import { partId, partName, SIZES, TILE_SIZES, type Kind, type Piece } from './parts';
 import { key, kx, kz, tileLayer, type Layer, type TileOpts } from './tile';
@@ -81,9 +81,15 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
   const rTop = rows[0], rBot = rows[rows.length - 1];
   const range = new Map<string, [number, number]>();
   const rangeOf = (r: number, c: number, p: PixelInfo): [number, number] => {
-    if (p.role === 'body') { const inset = p.fromTop < 2 ? S.taper[p.fromTop] : 0; return [inset, D - 1 - inset]; }
-    if (p.anchor === 'front') return [0, S.frontSlab - 1];
+    if (p.role === 'body') {
+      const inset = p.fromTop < 2 ? S.taper[p.fromTop] : 0;
+      // the glasses keep a flat front even where they top a column, so the A logo reads whole
+      return [p.part === PART.glasses ? 0 : inset, D - 1 - inset];
+    }
     const z0 = Math.round((D - S.slab) / 2); void r; void c;
+    // thin bits of the glasses: flat on the front, and deep enough to reach the middle, where thin head
+    // parts resting on them sit
+    if (p.anchor === 'front') return [0, Math.max(S.frontSlab, z0 + S.slab) - 1];
     return [z0, z0 + S.slab - 1];
   };
   for (const r of rows) for (let c = 0; c < N; c++) { const p = A.px[r][c]; if (p && !p.depthFrom) range.set(`${r},${c}`, rangeOf(r, c, p)); }
@@ -91,7 +97,8 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
     const p = A.px[r][c]; if (!p || !p.depthFrom) continue;
     const t = range.get(`${p.depthFrom[0]},${p.depthFrom[1]}`) ?? rangeOf(r, c, p);
     if (p.role === 'stalk') { const m = Math.floor((t[0] + t[1] + 1) / 2); range.set(`${r},${c}`, [Math.min(m, t[1] - sx + 1), t[1]]); }
-    else if (p.role === 'support') { const m = Math.floor((t[0] + t[1] + 1) / 2); range.set(`${r},${c}`, [Math.max(t[0], m - Math.ceil(sx / 2)), Math.max(t[0], m - Math.ceil(sx / 2)) + sx - 1]); }
+    // a support column overlaps the bridge (stalk) it may stand on or hold up: both meet at the middle
+    else if (p.role === 'support') { const m = Math.floor((t[0] + t[1] + 1) / 2); range.set(`${r},${c}`, [Math.max(t[0], m - Math.floor(sx / 2)), Math.max(t[0], m - Math.floor(sx / 2)) + sx - 1]); }
     else range.set(`${r},${c}`, p.role === 'protrusion' ? t : rangeOf(r, c, p));
   }
   const rowCells = new Map<number, Map<number, number>>();   // row -> cell -> colour
@@ -102,7 +109,9 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
       const p = A.px[r][c]; if (!p) continue;
       const [z0, z1] = range.get(`${r},${c}`)!;
       for (let z = z0; z <= z1; z++) {
-        const colr = p.role === 'support' ? TRANS_CLEAR : p.role !== 'body' || z <= z0 + S.front - 1 ? p.color : z < D / 2 ? p.fill : p.fillBack;
+        // thin parts show their colour through and through, except the glasses: their colour stays on the
+        // front edge, with the strap, arm or head behind it like the rest of the face
+        const colr = p.role === 'support' ? TRANS_CLEAR : (p.role !== 'body' && p.anchor !== 'front') || z <= z0 + S.front - 1 ? p.color : z < D / 2 ? p.fill : p.fillBack;
         for (let i = 0; i < sx; i++) { cells.set(key(c * sx + i, z), colr); if (p.role === 'support') supportCell.add(`${r}:${key(c * sx + i, z)}`); }
       }
     }

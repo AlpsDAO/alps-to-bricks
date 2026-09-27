@@ -185,7 +185,27 @@ dialog#order-panel { max-height: calc(100dvh - 24px); overflow: auto; }
 .bl-row .btns { flex-wrap: nowrap; }
 
 /* two ways in: type the number, or drop an image */
-.choose { display: grid; grid-template-columns: 1fr; gap: 12px; align-items: stretch; }
+.choose { display: grid; grid-template-columns: 1fr auto 1.35fr; gap: 12px; align-items: stretch; }
+.designer { display: flex; flex-direction: column; gap: 12px; padding: 18px 20px; border: 2px solid var(--line); border-radius: 12px; }
+.designer:focus-within { border-color: var(--accent); }
+.designer .drop-title { text-align: center; }
+.design-body { display: flex; gap: 14px; align-items: center; }
+#design-preview { width: 112px; height: 112px; flex: none; border-radius: 10px; image-rendering: pixelated; }
+.trait-rows { display: grid; gap: 6px; flex: 1; min-width: 0; }
+.trait-row { display: grid; grid-template-columns: 88px 30px minmax(0, 1fr) 30px; gap: 4px; align-items: center; font-size: 14px; }
+.trait-row label { color: var(--muted); font-weight: 600; }
+.trait-row select { min-width: 0; height: 30px; padding: 0 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); font: inherit; font-size: 14px; }
+.step { height: 30px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); font-size: 16px; line-height: 1; }
+.step:hover { border-color: var(--accent); }
+.design-actions { display: flex; gap: 8px; justify-content: flex-end; }
+@media (max-width: 480px) {
+  .design-body { flex-direction: column; align-items: stretch; }
+  #design-preview { align-self: center; width: 128px; height: 128px; }
+  /* labels above their pickers, so the trait names have the whole width */
+  .trait-row { grid-template-columns: 36px minmax(0, 1fr) 36px; row-gap: 2px; }
+  .trait-row label { grid-column: 1 / -1; font-size: 13px; }
+  .trait-row select, .step { height: 36px; }
+}
 @media (max-width: 700px) { .choose { grid-template-columns: 1fr; } }
 .choose .drop { min-height: 170px; }
 .or { align-self: center; justify-self: center; color: var(--muted); font-weight: 700; font-size: 14px; }
