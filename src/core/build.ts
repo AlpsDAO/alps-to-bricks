@@ -375,9 +375,27 @@ function voxelize(grid: PunkGrid, A: Analysis, S: SizeSpec) {
   const range = new Map<string, [number, number]>();
   // a flat head reaches the middle of the depth, where the supports and bridges holding details sit
   const headShape = grid.style?.head ?? 'round', flatBack = Math.floor(D / 2);
+  // the middle of the depth, one pixel thick: where rods run and a cylinder's sides are
+  const zc = (D - 1) / 2;
+  const mid = (): [number, number] => { const a = sx === 1 ? Math.round(zc) : Math.floor(zc + 0.5 - sx / 2); return [a, a + sx - 1]; };
+  // a cylinder's rows are ellipses across their width: deepest in the middle, thin at the sides
+  const rowSpan = new Map<number, [number, number]>();
+  if (headShape === 'cylinder') for (let r = 0; r < N; r++) {
+    const cs = [...Array(N).keys()].filter(c => { const p = A.px[r][c]; return !!p && p.role === 'body' && (p.part === PART.head || p.part === PART.glasses); });
+    if (cs.length) rowSpan.set(r, [cs[0], cs[cs.length - 1]]);
+  }
+  const cylinder = (r: number, c: number): [number, number] | null => {
+    const span = rowSpan.get(r); if (!span) return null;
+    const half = (span[1] - span[0] + 1) / 2, u = Math.max(-1, Math.min(1, (c + 0.5 - span[0] - half) / half)), s = Math.sqrt(1 - u * u);
+    const z0 = Math.round(zc - zc * s), z1 = Math.round(zc + zc * s);
+    return z1 - z0 + 1 >= sx ? [z0, z1] : mid();
+  };
   const rangeOf = (r: number, c: number, p: PixelInfo): [number, number] => {
+    const onHead = p.part === PART.head || p.part === PART.glasses;
+    if (headShape === 'cylinder' && onHead && (p.role === 'body' || p.anchor === 'front')) { const cy = cylinder(r, c); if (cy) return cy; }
+    if (p.anchor === 'rod') return mid();
     // the front is always flat: the Alp, pixel for pixel. Behind it, the head takes its shape
-    if (p.role === 'body' && (p.part === PART.head || p.part === PART.glasses)) {
+    if (p.role === 'body' && onHead) {
       if (headShape === 'box') return [0, D - 1];
       if (headShape === 'flat') return [0, flatBack];
       // round: the back curves in towards the outline, like a quarter circle over the last few pixels
@@ -441,11 +459,12 @@ function voxelize(grid: PunkGrid, A: Analysis, S: SizeSpec) {
       const p = A.px[r]?.[Math.floor(x / sx)];
       return !!p && !p.depthFrom && (p.part === PART.glasses || (p.part === PART.head && p.role === 'body'));
     };
+    // on the head's outermost pixel columns, wherever they reach at that depth
     const paint = (r: number, z: number, colour: number) => {
       const cells = rowCells.get(r); if (!cells) return;
-      const xs = [...cells.keys()].filter(k => kz(k) === z && onHead(r, kx(k))).map(kx);
-      if (!xs.length) return;
-      for (const x of [Math.min(...xs), Math.max(...xs)]) cells.set(key(x, z), colour);
+      const cols = [...Array(N).keys()].filter(c => onHead(r, c * sx));
+      if (!cols.length) return;
+      for (const x of [cols[0] * sx, cols[cols.length - 1] * sx + sx - 1]) if (cells.has(key(x, z))) cells.set(key(x, z), colour);
     };
     for (const r of G.rows) for (let z = 1; z <= (G.kind === 'strap' ? D - 1 : zEars); z++) {
       const j = Math.floor((z - zGlyph) / sx);

@@ -99,7 +99,7 @@ export class Viewer {
       if (!mm) {
         const col = COLOR_BY_ID.get(c)!;
         mm = col.trans
-          ? new THREE.MeshPhysicalMaterial({ color: renderHex(c), roughness: 0.05, transparent: true, opacity: c === 12 ? 0.35 : 0.8, depthWrite: c !== 12 })
+          ? new THREE.MeshPhysicalMaterial({ color: renderHex(c), roughness: 0.05, transparent: true, opacity: c === 12 ? 0.35 : 0.65, depthWrite: c !== 12 })
           : new THREE.MeshStandardMaterial({ color: renderHex(c), roughness: 0.32, metalness: 0 });
         mats.set(c, mm);
       }

@@ -61,7 +61,7 @@ const MATCHABLE = BRICK_COLORS.filter(c => !c.trans);
 const TRANS_MAX_PIXELS = 16;
 const MAX_EXTRA = 8;
 
-export interface PunkColor { rgb: RGB; count: number }
+export interface PunkColor { rgb: RGB; count: number; clear?: boolean }
 
 /**
  * Map each Punk colour to a brick colour. Starts with the nearest colour, then
@@ -72,7 +72,8 @@ export function mapColors(colors: PunkColor[], touching: Set<string>, mustDiffer
   const labs = colors.map(c => rgbToLab(c.rgb));
   const ranked = colors.map((c, i) => {
     const pure = c.rgb[0] < 8 && c.rgb[1] < 8 && c.rgb[2] < 8;
-    const cands = MATCHABLE.filter(b => !b.trans || c.count <= TRANS_MAX_PIXELS)
+    // see-through colours (a stream of wine) match see-through bricks only
+    const cands = (c.clear ? BRICK_COLORS.filter(b => b.trans) : MATCHABLE.filter(b => !b.trans || c.count <= TRANS_MAX_PIXELS))
       .map(b => ({ id: b.id, d: pure ? (b.id === BLACK ? 0 : 999) : deltaE(labs[i], LAB.get(b.id)!) }))
       .sort((a, b) => a.d - b.d);
     return cands;

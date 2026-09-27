@@ -7,7 +7,7 @@ export interface RGBAImage { width: number; height: number; data: Uint8ClampedAr
 export interface PunkGrid {
   /** 24 rows × 24 cols; -1 = background, otherwise index into `colors` */
   cells: number[][];
-  colors: { rgb: RGB; count: number }[];
+  colors: { rgb: RGB; count: number; clear?: boolean }[];
   background: RGB | null;
   /** where the Punk was found, in source image pixels */
   box: { x: number; y: number; size: number };
@@ -22,11 +22,18 @@ export interface PunkGrid {
 /** Voxels of a hand-made head: x = column, y = depth from the front, z = height from the bottom row */
 export interface HeadModel { voxels: { x: number; y: number; z: number; rgb: RGB }[] }
 
-/** A head's volume behind its flat front: boxy objects, rounded forms, or thin things seen face-on */
-export type HeadShape = 'box' | 'round' | 'flat';
+/** A head's volume: boxy objects, rounded forms, thin things seen face-on (all behind a flat front), or
+ * upright cylinders (barrels, mugs, cans) that are round all the way round, front included */
+export type HeadShape = 'box' | 'round' | 'flat' | 'cylinder';
 /** Whether a pattern carries on round the sides and back, or is printed on the front only */
 export type Wrap = 'around' | 'front';
-export interface GridStyle { head?: HeadShape; accessory?: Wrap; body?: Wrap }
+export interface GridStyle {
+  head?: HeadShape;
+  /** the head's thin bits (handles, taps, candles, a stream of wine) are rods one pixel deep, not slabs */
+  rods?: boolean;
+  accessory?: Wrap;
+  body?: Wrap;
+}
 
 /** Alps' traits, in drawing order */
 export const PART = { body: 0, accessory: 1, head: 2, glasses: 3 } as const;

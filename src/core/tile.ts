@@ -2,7 +2,7 @@
 // Hidden cells (inside the bust) may take any colour, so a piece can run from
 // a visible cell into hidden ones: that is what ties the face to the body.
 import { partId, type Kind, type Piece } from './parts';
-import { BLACK, COLOR_BY_ID, TRANS_CLEAR } from './palette';
+import { BLACK, COLOR_BY_ID } from './palette';
 
 export interface Cell { c: number; vis: boolean }
 export type Layer = Map<number, Cell>;
@@ -40,8 +40,8 @@ export function tileLayer(cells: Layer, o: TileOpts): Piece[] {
       if (isTrans(cell.c)) trans = true;
       if (cell.vis || isTrans(cell.c)) { if (vis < 0) vis = cell.c; else if (vis !== cell.c) return null; }
     }
-    // transparent parts: small sizes only (Trans-Clear supports come up to 2×2)
-    if (trans && (o.kind === 'tile' ? w * d > 2 : vis === TRANS_CLEAR ? w > 2 || d > 2 : w * d > 1)) return null;
+    // transparent parts: small sizes only, up to 2×2 (supports, a stream of wine)
+    if (trans && (o.kind === 'tile' ? w * d > 2 : w > 2 || d > 2)) return null;
     // a piece nobody can see is black: cheapest, easiest to find, one lot
     const c = vis >= 0 ? vis : BLACK;
     if (o.allow && w * d > 1 && !o.allow(o.kind, w, d, c)) return null;

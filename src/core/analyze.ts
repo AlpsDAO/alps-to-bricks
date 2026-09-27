@@ -13,8 +13,8 @@ export type Role = 'body' | 'protrusion' | 'support' | 'stalk';
 export interface PixelInfo {
   color: number;            // brick colour shown on the front
   role: Role;
-  /** protrusions: sits in the middle of the head's depth, or at the front (mouth accessories) */
-  anchor: 'center' | 'front';
+  /** thin parts: a slab in the middle of the depth, flat on the front (glasses), or a rod one pixel deep */
+  anchor: 'center' | 'front' | 'rod';
   /** body pixels: how many pixels of the same column sit above this one (0 = column top) */
   fromTop: number;
   fill: number;             // colour of the inside/sides, front half
@@ -240,6 +240,13 @@ export function analyze(g: PunkGrid): Analysis {
       // the back of the head shows the head's colour and the back of the torso the body's, not the face
       // or the accessory; without trait info the back shows what the front does
       let fillBack = onHead ? skin : (part === PART.body && g.style?.body === 'front') || printed(r, c) ? bodyColor ?? fill : fill;
+      // a cylinder (a barrel, a mug) shows its own pattern all the way round: staves and hoops carry on
+      // round the back; behind the glasses it's the head's colour just above or below them
+      if (onHead && g.style?.head === 'cylinder') {
+        let k = part === PART.head ? col(r, c) : -1;
+        for (let d = 1; k < 0 && d < N; d++) for (const rr of [r - d, r + d]) if (k < 0 && inside(rr, c) && partOf(rr, c) === PART.head) k = col(rr, c);
+        fill = fillBack = k >= 0 ? k : skin;
+      }
       // the goggle strap (or the noggles' arms) along the sides, and the strap across the back
       if (onHead && band?.rows.includes(r)) { fill = band.color; if (band.back) fillBack = band.color; }
       fillBack = bridgedInto.get(`${r},${c}`) ?? fillBack;
@@ -247,7 +254,7 @@ export function analyze(g: PunkGrid): Analysis {
       while (r - fromTop - 1 >= 0 && solid(r - fromTop - 1, c)) fromTop++;
       const isBody = body(r, c);
       // thin bits of the glasses stay on the front, so the A logo and frames read flat
-      const anchor = !isBody && part === PART.glasses ? 'front' : 'center';
+      const anchor = isBody ? 'center' : part === PART.glasses ? 'front' : part === PART.head && g.style?.rods ? 'rod' : 'center';
       row.push({ color: col(r, c), role: isBody ? 'body' : 'protrusion', anchor, fromTop, fill, fillBack, depthFrom: depthFrom.get(`${r},${c}`), part, edge: edge[r][c] || 1 });
     }
     px.push(row);

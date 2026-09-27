@@ -5,7 +5,7 @@ import { analyze } from '../src/core/analyze';
 import { buildModel, headVoxels } from '../src/core/build';
 import { readVox, writeVox } from '../src/alps/vox';
 import { PART } from '../src/core/detect';
-import { BLACK } from '../src/core/palette';
+import { BLACK, COLOR_BY_ID } from '../src/core/palette';
 import { alp, ALPS } from './alps';
 
 describe('Alp pixels', () => {
@@ -160,5 +160,30 @@ describe('hand-made heads (.vox)', () => {
     const front = buildModel({ ...g, headModel: painted }, 'mini').pieces.filter(p => p.z === 0 && p.y > 40);
     const auto = buildModel(g, 'mini').pieces.filter(p => p.z === 0 && p.y > 40);
     expect(new Set(front.map(p => p.c))).toEqual(new Set(auto.map(p => p.c)));
+  });
+});
+
+describe('the wine barrel', () => {
+  // Alp 148 wears it: an upright barrel with hoops and staves, a tap on the right and wine pouring down
+  const g = alp(148), A = analyze(g);
+  it('is a cylinder: round at the front too, deepest in the middle, thin at the sides', () => {
+    expect(g.style?.head).toBe('cylinder');
+    const m = buildModel(g, 'mini');
+    expect(m.checks.floating).toBe(0);
+    // the front of the barrel's middle row starts further forward in the centre than at the edges
+    const row = m.pieces.filter(p => p.y >= 40 && p.y < 44 && p.kind !== 'tile');
+    const frontAt = (x: number) => Math.min(...row.filter(p => p.x <= x && x < p.x + p.w).map(p => p.z));
+    expect(frontAt(15)).toBeLessThan(frontAt(8));
+  });
+  it('shows its staves and hoops round the back, not a single colour', () => {
+    const back = new Set(A.px.slice(3, 21).flat().filter(p => p && p.part === PART.head && p.role === 'body').map(p => p!.fillBack));
+    expect(back.size).toBeGreaterThan(2);
+  });
+  it('pours the wine in see-through red rods from the tap to the ground', () => {
+    const m = buildModel(g, 'xl');
+    const wine = m.pieces.filter(p => COLOR_BY_ID.get(p.c)?.name === 'Trans-Red');
+    expect(wine.length).toBeGreaterThan(20);
+    expect(Math.min(...wine.map(p => p.y))).toBeLessThanOrEqual(0);        // reaches the base
+    expect(Math.max(...wine.map(p => Math.max(p.w, p.d)))).toBeLessThanOrEqual(2);   // a stream, not a wall
   });
 });

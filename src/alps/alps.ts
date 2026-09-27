@@ -29,7 +29,8 @@ function paint(cells: number[][], parts: number[][], part: number, hex: string) 
 
 /** How each trait is modelled in 3D, by name without its prefix ("head-console-handheld" → "console-handheld") */
 const spec = traits3d as {
-  heads: Record<string, { shape: HeadShape }>;
+  // clear: colours of the head shown in see-through bricks (a stream of wine, a glass), as hex
+  heads: Record<string, { shape: HeadShape; rods?: boolean; clear?: string[] }>;
   accessories: Record<string, { wrap: Wrap }>;
   bodies: Record<string, { wrap: Wrap }>;
 };
@@ -38,8 +39,10 @@ const bare = (filename: string) => filename.replace(/^[a-z]+-/, '');
 export const headName = (seed: AlpSeed) => bare(imageData.images.heads[seed.head].filename);
 export function styleOf(seed: AlpSeed): GridStyle {
   const { images } = imageData;
+  const head = spec.heads[bare(images.heads[seed.head].filename)];
   return {
-    head: spec.heads[bare(images.heads[seed.head].filename)]?.shape,
+    head: head?.shape,
+    rods: head?.rods,
     accessory: spec.accessories[bare(images.accessories[seed.accessory].filename)]?.wrap,
     body: spec.bodies[bare(images.bodies[seed.body].filename)]?.wrap,
   };
@@ -54,12 +57,16 @@ export function alpGrid(seed: AlpSeed): PunkGrid {
   paint(pal, parts, PART.accessory, images.accessories[seed.accessory].data);
   paint(pal, parts, PART.head, images.heads[seed.head].data);
   paint(pal, parts, PART.glasses, images.glasses[seed.glasses].data);
-  const index = new Map<number, number>();
-  const colors: { rgb: RGB; count: number }[] = [];
-  const cells = pal.map(row => row.map(p => {
+  // the head's see-through colours get their own entries, so the same colour elsewhere stays solid
+  const clear = new Set(spec.heads[bare(images.heads[seed.head].filename)]?.clear ?? []);
+  const index = new Map<string, number>();
+  const colors: { rgb: RGB; count: number; clear?: boolean }[] = [];
+  const cells = pal.map((row, r) => row.map((p, c) => {
     if (p === 0) return -1;
-    let k = index.get(p);
-    if (k === undefined) { k = colors.length; index.set(p, k); colors.push({ rgb: hexToRgb(`#${palette[p]}`), count: 0 }); }
+    const see = parts[r][c] === PART.head && clear.has(palette[p]);
+    const id = see ? `${p}:clear` : String(p);
+    let k = index.get(id);
+    if (k === undefined) { k = colors.length; index.set(id, k); colors.push({ rgb: hexToRgb(`#${palette[p]}`), count: 0, ...(see ? { clear: true } : {}) }); }
     colors[k].count++;
     return k;
   }));
