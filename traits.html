@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>Trait review · Alps to Bricks</title>
+  <meta name="description" content="Every Alps trait built in bricks, for review.">
+  <meta name="theme-color" content="#213343">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23213343'/%3E%3Crect x='2' y='6' width='12' height='2' fill='%23ffffff'/%3E%3Crect x='3' y='5' width='4' height='5' fill='%23ffffff'/%3E%3Crect x='9' y='5' width='4' height='5' fill='%23ffffff'/%3E%3Crect x='4' y='6' width='2' height='3' fill='%23213343'/%3E%3Crect x='10' y='6' width='2' height='3' fill='%23213343'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Londrina+Solid:wght@400;900&display=swap">
+  <link rel="stylesheet" href="/src/style.css">
+  <link rel="stylesheet" href="/src/gallery.css">
+</head>
+<body class="gl">
+  <header class="top gl-top">
+    <a class="brand" href="./">Alps to Bricks</a>
+    <span class="tag">Trait review</span>
+  </header>
+
+  <main class="gl-main">
+    <section class="gl-intro">
+      <div>
+        <h1>Every trait, in bricks</h1>
+        <p class="lede">Each head, pair of glasses, body and accessory is tried on the same plain Alp, built as a Mini bust and shown from the front, the side and the back. Mark each one <b>Looks right</b> or <b>Needs work</b>, with a note if it helps. Marks stay in this browser; copy or download them when you’re done.</p>
+      </div>
+      <a class="gl-neutral" id="neutral" target="_blank" rel="noopener" title="Open the plain Alp in Alps to Bricks (new tab)">
+        <canvas width="32" height="32" aria-hidden="true"></canvas>
+        <span><b>The plain Alp</b><small id="neutral-names"></small></span>
+      </a>
+    </section>
+
+    <nav class="gl-bar" id="bar" aria-label="Sections and filters">
+      <div class="gl-jump" id="jump"></div>
+      <div class="gl-tools">
+        <input type="search" id="filter" placeholder="Filter by name" aria-label="Filter traits by name" autocomplete="off" spellcheck="false">
+        <div class="gl-seg" role="radiogroup" aria-label="Show">
+          <button type="button" role="radio" data-mode="all" aria-checked="true">All</button>
+          <button type="button" role="radio" data-mode="unmarked" aria-checked="false">Unmarked</button>
+          <button type="button" role="radio" data-mode="bad" aria-checked="false">Needs work</button>
+        </div>
+      </div>
+    </nav>
+
+    <div id="sections"></div>
+    <p class="gl-empty" id="empty" hidden>No traits match.</p>
+  </main>
+
+  <div class="gl-review" id="review">
+    <p class="gl-counts" id="counts" aria-live="polite"></p>
+    <div class="gl-acts">
+      <button type="button" class="ghost" id="copy">Copy review</button>
+      <button type="button" class="go" id="download">Download JSON</button>
+    </div>
+  </div>
+  <p class="gl-toast" id="toast" role="status" hidden></p>
+  <script type="module" src="/src/gallery.ts"></script>
+</body>
+</html>
