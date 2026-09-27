@@ -2,6 +2,7 @@
 // drawn on a canvas (1600×1131, A4 landscape) and packed into a PDF.
 import type { Model } from '../core/build';
 import { rgbToHex } from '../core/color';
+import { N } from '../core/analyze';
 import type { PunkGrid } from '../core/detect';
 import { COLOR_BY_ID, renderHex } from '../core/palette';
 import type { Kind } from '../core/parts';
@@ -66,7 +67,7 @@ function footer(x: CanvasRenderingContext2D, n: number, title: string) {
   x.textAlign = 'right'; x.fillText(String(n), PW - 60, PH - 36); x.textAlign = 'left';
 }
 function punkCanvas(g: PunkGrid, px: number) {
-  const c = document.createElement('canvas'); c.width = c.height = 24 * px;
+  const c = document.createElement('canvas'); c.width = c.height = N * px;
   const x = c.getContext('2d')!;
   x.fillStyle = g.background ? rgbToHex(g.background) : '#638596'; x.fillRect(0, 0, c.width, c.height);
   g.cells.forEach((row, r) => row.forEach((v, col) => { if (v >= 0) { x.fillStyle = rgbToHex(g.colors[v].rgb); x.fillRect(col * px, r * px, px, px); } }));
@@ -91,7 +92,7 @@ export class PageMaker {
     this.steps = m.steps.length;
     this.total = 1 + m.steps.length + this.NB;
     this.r = new StepRenderer(m, o.renderSize ?? 1100, o.label);
-    this.title = `${o.label ? `Punk ${o.label}` : 'Your Punk'} · ${m.size === 'xl' ? 'XL' : 'Mini'} brick bust`;
+    this.title = `${o.label ? `Alp ${o.label}` : 'Your Alp'} · ${m.size === 'xl' ? 'XL' : 'Mini'} brick bust`;
   }
   /** "Cover", "Step 12", "Parts 1/2" */
   label(n: number): string {
@@ -103,12 +104,12 @@ export class PageMaker {
     const { m, grid, o, r, title } = this, c = m.checks, NB = this.NB;
     if (n === 1) {
   const [pg, x] = blankPage();
-  const grad = x.createLinearGradient(0, 0, 0, PH); grad.addColorStop(0, '#7C95A5'); grad.addColorStop(1, '#5A7282');
+  const grad = x.createLinearGradient(0, 0, 0, PH); grad.addColorStop(0, '#2E4A61'); grad.addColorStop(1, '#213343');
   x.fillStyle = grad; x.fillRect(0, 0, PW, PH);
   x.drawImage(r.cover(), 540, 30, 1080, 1080);
-  x.drawImage(punkCanvas(grid, 15), 80, 330, 360, 360);
+  x.drawImage(punkCanvas(grid, 12), 80, 330, 360, 360);
   x.strokeStyle = '#fff'; x.lineWidth = 6; x.strokeRect(80, 330, 360, 360);
-  x.fillStyle = '#fff'; x.font = `bold 84px ${FONT}`; x.fillText(o.label ? `PUNK ${o.label}` : 'YOUR PUNK', 70, 150);
+  x.fillStyle = '#fff'; x.font = `bold 84px ${FONT}`; x.fillText(o.label ? `ALP ${o.label}` : 'YOUR ALP', 70, 150);
   x.font = `44px ${FONT}`; x.fillText(`Brick edition · ${m.size === 'xl' ? 'XL' : 'Mini'} bust`, 74, 215);
   x.font = `bold 40px ${FONT}`; x.fillText(`${c.pieces.toLocaleString('en')} pieces`, 80, 800);
   x.font = `32px ${FONT}`;
@@ -116,7 +117,7 @@ export class PageMaker {
   x.fillText(`approx. ${m.dims[0]} × ${m.dims[1]} × ${m.dims[2]} cm`, 80, 895);
   x.font = `22px ${FONT}`; x.fillStyle = 'rgba(255,255,255,.85)';
   x.font = `19px ${FONT}`;
-  x.fillText('Made with Punk to Bricks · Unofficial fan project · Not affiliated with, sponsored or endorsed by the LEGO Group, BrickLink or the CryptoPunks project.', 80, 1024);
+  x.fillText('Made with Alps to Bricks (bricks.alps.wtf) · Fan project by Alps · Not affiliated with, sponsored or endorsed by the LEGO Group or BrickLink.', 80, 1024);
   x.fillText('LEGO® is a trademark of the LEGO Group. Parts data: Rebrickable. Computer-checked only, not physically built. Provided "as is", without warranty.', 80, 1052);
       return pg;
     }
@@ -183,7 +184,7 @@ export const PAGE_SIZE = [PW, PH] as const;
 export async function makeInstructions(m: Model, grid: PunkGrid, o: PageOptions & { onProgress?: (done: number, total: number) => void }): Promise<Blob> {
   const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [PW, PH], compress: true, hotfixes: ['px_scaling'] });
-  pdf.setProperties({ title: `${o.label ? `Punk ${o.label}` : 'Your Punk'} brick bust — instructions`, creator: 'Punk to Bricks' });
+  pdf.setProperties({ title: `${o.label ? `Alp ${o.label}` : 'Your Alp'} brick bust — instructions`, creator: 'Alps to Bricks' });
   await drawPages(m, grid, o, (pg, n, total) => {
     if (n > 1) pdf.addPage([PW, PH], 'landscape');
     pdf.addImage(pg.toDataURL('image/jpeg', 0.85), 'JPEG', 0, 0, PW, PH, undefined, 'FAST');

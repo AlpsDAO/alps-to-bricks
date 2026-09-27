@@ -52,7 +52,7 @@ export async function recordVideo(m: Model, grid: PunkGrid, o: VideoOptions): Pr
   const ax = acc.getContext('2d')!;
   const out = document.createElement('canvas'); out.width = W; out.height = H;
   const x = out.getContext('2d')!;
-  const title = o.label ? `Punk ${o.label}` : 'My CryptoPunk';
+  const title = o.label ? `Alp ${o.label}` : 'My Alp';
   const sub = `${m.checks.pieces.toLocaleString('en')} pieces · ${m.size === 'xl' ? 'XL' : 'Mini'} brick bust`;
 
   const drawModel = (t: number) => {
@@ -75,12 +75,12 @@ export async function recordVideo(m: Model, grid: PunkGrid, o: VideoOptions): Pr
     if (o.format === 'story') {
       x.font = `800 ${Math.round(72 * k)}px ${FONT}`; x.fillText(title, W / 2, 150 * k);
       x.font = `500 ${Math.round(40 * k)}px ${FONT}`; x.fillText(sub, W / 2, 215 * k);
-      x.font = `600 ${Math.round(34 * k)}px ${FONT}`; x.globalAlpha = 0.75; x.fillText('Punk to Bricks', W / 2, H - 110 * k); x.globalAlpha = 1;
+      x.font = `600 ${Math.round(34 * k)}px ${FONT}`; x.globalAlpha = 0.75; x.fillText('Alps to Bricks', W / 2, H - 110 * k); x.globalAlpha = 1;
     } else {
       x.textAlign = 'left';
       x.font = `800 ${Math.round(44 * k)}px ${FONT}`; x.fillText(title, 44 * k, 76 * k);
       x.font = `500 ${Math.round(28 * k)}px ${FONT}`; x.fillText(sub, 44 * k, 118 * k);
-      x.font = `600 ${Math.round(24 * k)}px ${FONT}`; x.globalAlpha = 0.7; x.fillText('Punk to Bricks', 44 * k, H - 40 * k); x.globalAlpha = 1;
+      x.font = `600 ${Math.round(24 * k)}px ${FONT}`; x.globalAlpha = 0.7; x.fillText('Alps to Bricks', 44 * k, H - 40 * k); x.globalAlpha = 1;
     }
   };
 

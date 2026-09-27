@@ -2,7 +2,7 @@
 import { analyze, N, type PixelInfo } from './analyze';
 import { checkModel, connections, grounded, type Checks } from './check';
 import type { PunkGrid } from './detect';
-import { BASE_GRAY, BLACK, COLOR_BY_ID, TRANS_CLEAR } from './palette';
+import { BASE_GRAY, BLACK, COLOR_BY_ID, mapColors, TRANS_CLEAR } from './palette';
 import { partId, partName, SIZES, TILE_SIZES, type Kind, type Piece } from './parts';
 import { key, kx, kz, tileLayer, type Layer, type TileOpts } from './tile';
 import { availableAtLego } from './lego';
@@ -71,6 +71,9 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
   const allow = overrides.preferLego ? availableAtLego : undefined;
   const A = analyze(grid);
   const notes = [...A.notes];
+  // the base takes the Alp's background colour; the nameplate stands out from it
+  const baseColor = grid.background ? mapColors([{ rgb: grid.background, count: 999 }], new Set())[0] : BLACK;
+  const plateColor = baseColor === BASE_GRAY ? BLACK : BASE_GRAY;
   const { sx, D } = S;
 
   // ---------- 1. pixels -> stud cells, one map per pixel row ----------
@@ -207,7 +210,7 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
       const cells: Layer = new Map();
       for (const k of baseCells) {
         const x = kx(k), z = kz(k);
-        cells.set(k, { c: BLACK, vis: x === bx0 || x === bx1 || z === bz0 || z === bz1 });
+        cells.set(k, { c: baseColor, vis: x === bx0 || x === bx1 || z === bz0 || z === bz1 });
       }
       layers.push({ y, h: l.h, kind: l.kind, cells, row: null, pieces: [] }); y += l.h;
     }
@@ -257,9 +260,9 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
       const z0 = -Math.ceil((S.baseMargin.front + d) / 2);
       let ok = true;
       for (let i2 = 0; i2 < w; i2++) for (let j = 0; j < d; j++) if (!exposed.has(key(cx0 + i2, z0 + j))) ok = false;
-      if (ok && (!allow || allow('tile', w, d, BASE_GRAY))) {
+      if (ok && (!allow || allow('tile', w, d, plateColor))) {
         for (let i2 = 0; i2 < w; i2++) for (let j = 0; j < d; j++) exposed.delete(key(cx0 + i2, z0 + j));
-        tops.push({ x: cx0, z: z0, y: top, h: 1, w, d, c: BASE_GRAY, kind: 'tile', part: partId('tile', w, d), group: 'base', nameplate: true });
+        tops.push({ x: cx0, z: z0, y: top, h: 1, w, d, c: plateColor, kind: 'tile', part: partId('tile', w, d), group: 'base', nameplate: true });
       }
     }
     if (S.slopes && L.row !== null && topRows.has(L.row)) {
@@ -333,22 +336,10 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
   return { size, pieces, steps: sortedSteps, bom, colors, checks, notes, dims };
 }
 
-/** Rows at the top that are hat/hair rather than face: built as a separate sub-assembly. */
-function headwearRows(px: (PixelInfo | null)[][], skin: number, rTop: number): Set<number> {
-  // the rows above the face (until skin shows up), if at least two of them
-  // are mostly hat or hair; black counts when it is a filled area (a black
-  // hat), not just the outline
-  const block = new Set<number>();
-  let wearRows = 0;
-  for (let r = rTop; r < 13; r++) {
-    const ps = px[r].filter((p): p is PixelInfo => !!p && p.role !== 'support');
-    if (!ps.length) continue;
-    if (ps.filter(p => p.color === skin).length / ps.length >= 0.25) break;
-    const wear = ps.filter(p => p.color !== skin && (p.color !== BLACK || p.fill === BLACK) && !COLOR_BY_ID.get(p.color)?.trans).length / ps.length;
-    if (wear >= 0.4) wearRows++;
-    block.add(r);
-  }
-  return wearRows >= 2 ? block : new Set();
+/** Rows at the top built as a separate sub-assembly (a Punk's hat). An Alp's head is one piece with its
+ * face, so none are. */
+function headwearRows(_px: (PixelInfo | null)[][], _skin: number, _rTop: number): Set<number> {
+  return new Set();
 }
 
 /** Fix pieces that aren't connected to the base: re-tile around them, bridge from above, or add a support column. */
@@ -399,6 +390,21 @@ function repair(layers: LayerRec[], notes: string[], groupOf: (L: LayerRec) => P
         const pri = [...layers[Li - 1].cells.keys()].filter(k => pc.has(k));
         if (!pri.length) return null;
         return retile(Li - 1, pri, groundedCells(Li - 2));
+      },
+      // beside a grounded piece of another colour (a detail hanging off the side of a strand): set back
+      // at the rear, one piece in P's colour reaches across into the neighbour
+      () => {
+        const L = layers[Li], zBack = Math.max(...[...pc].map(kz));
+        const g = groundedCells(Li);
+        const pair = [...pc].filter(k => kz(k) === zBack)
+          .flatMap(k => [-1, 1].map(dx => [k, key(kx(k) + dx, zBack)] as const))
+          .find(([, n]) => g.has(n) && !pc.has(n) && L.cells.has(n));
+        if (!pair) return null;
+        const [own, n] = pair, cells = L.cells;
+        L.cells = new Map(cells);
+        L.cells.set(n, { c: cells.get(own)!.c, vis: cells.get(n)!.vis });
+        const undo = retile(Li, [own], Li > 0 ? groundedCells(Li - 1) : new Set());
+        return () => { undo(); L.cells = cells; };
       },
     ];
     for (const t of tries) {

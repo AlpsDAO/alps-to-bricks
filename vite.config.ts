@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 
-// Relative base: the same build works on Netlify and on GitHub Pages (sub-path).
+// Relative base: the same build works at the root (bricks.alps.wtf) or under a sub-path.
 export default defineConfig({
   base: './',
   worker: { format: 'es' },

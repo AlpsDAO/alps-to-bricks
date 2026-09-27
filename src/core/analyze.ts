@@ -1,11 +1,13 @@
-// Pixel-level understanding of a Punk: which pixels form the solid head, which
-// stick out (brims, pipes, cigarettes, ears), which float (smoke) and need a
+// Pixel-level understanding of an Alp: which pixels form the solid head and body,
+// which stick out (antennae, stems, glasses arms), which float and need a
 // support, and which colour each pixel shows on the sides and back of the bust.
 import type { PunkGrid } from './detect';
 import { mapColors } from './palette';
 import { BLACK, COLOR_BY_ID, TRANS_CLEAR } from './palette';
 
-export const N = 24;
+export const N = 32;
+/** Alps' bodies start on this row; everything above is the head (and its glasses) */
+const BODY_TOP = 21;
 export type Role = 'body' | 'protrusion' | 'support' | 'stalk';
 
 export interface PixelInfo {
@@ -79,6 +81,8 @@ export function analyze(g: PunkGrid): Analysis {
         const rr = r + dr, cc = c + dc;
         if (!inside(rr, cc)) continue;
         if (sil(rr, cc) && !attached[rr][cc] && !l.some(p => p[0] === rr && p[1] === cc)) continue;
+        // an earlier support or bridge only holds things from above or below, never beside it
+        if (dr === 0 && (support[rr][cc] || stalk.has(`${rr},${cc}`))) continue;
         const nd = d + (dr === 1 ? 1 : dr === -1 ? 2 : 3);
         if (nd < cost[rr][cc]) { cost[rr][cc] = nd; prev.set(`${rr},${cc}`, [r, c]); q.push([nd, rr, cc]); }
       }
@@ -114,12 +118,11 @@ export function analyze(g: PunkGrid): Analysis {
     for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) if (inside(r - i, c - j) && core[r - i][c - j]) return true;
     return false;
   };
-  const bodyCols = new Map<number, [number, number]>();
-  for (let r = 0; r < N; r++) { const cs = [...Array(N).keys()].filter(c => body(r, c)); if (cs.length) bodyCols.set(r, [cs[0], cs[cs.length - 1]]); }
 
-  // ---- skin: the main colour of the middle of the face ----
+  // ---- skin: the head's main colour, which shows on its sides and back ----
   const tally = new Map<number, number>();
-  for (let r = 11; r <= 17; r++) for (let c = 7; c <= 14; c++) {
+  for (let r = 0; r < BODY_TOP; r++) for (let c = 0; c < N; c++) {
+    if (!attached[r][c]) continue;
     const k = col(r, c);
     if (k < 0 || k === BLACK || COLOR_BY_ID.get(k)?.trans) continue;
     tally.set(k, (tally.get(k) ?? 0) + 1);
@@ -140,27 +143,10 @@ export function analyze(g: PunkGrid): Analysis {
   const detail = (k: number) => (pixelsOf.get(k) ?? 0) <= 6;
   const fillable = (r: number, c: number) => solid(r, c) && !lineBlack(r, c) && !COLOR_BY_ID.get(col(r, c))?.trans && !detail(col(r, c));
 
-  // Thin parts (not body) decide their depth as a whole: a part that mostly sits
-  // right of the face in the lower half (pipe, cigarette) goes to the front,
-  // anything else (brim, ear, smoke, hair strands) to the middle.
-  const thin = (r: number, c: number) => solid(r, c) && !body(r, c);
-  const anchorOf = new Map<string, 'center' | 'front'>();
-  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
-    if (!thin(r, c) || anchorOf.has(`${r},${c}`)) continue;
-    const part: [number, number][] = [[r, c]], seen = new Set([`${r},${c}`]);
-    for (let i = 0; i < part.length; i++) for (const [dr, dc] of D4) {
-      const rr = part[i][0] + dr, cc = part[i][1] + dc;
-      if (thin(rr, cc) && !seen.has(`${rr},${cc}`)) { seen.add(`${rr},${cc}`); part.push([rr, cc]); }
-    }
-    const front = part.filter(([pr, pc]) => { const bc = bodyCols.get(pr); return pr >= 15 && !!bc && pc > bc[1]; }).length;
-    const a: 'center' | 'front' = front * 2 >= part.length ? 'front' : 'center';
-    for (const k of seen) anchorOf.set(k, a);
-  }
-
+  // Alps face the front, so thin parts (antennae, stems, glasses arms) sit in the middle of the depth
   const px: (PixelInfo | null)[][] = [];
   for (let r = 0; r < N; r++) {
     const row: (PixelInfo | null)[] = [];
-    const leftSkin = [...Array(N).keys()].find(c => col(r, c) === skin && solid(r, c)) ?? N;
     for (let c = 0; c < N; c++) {
       if (!attached[r][c]) { row.push(null); continue; }
       if (support[r][c]) {
@@ -176,16 +162,17 @@ export function analyze(g: PunkGrid): Analysis {
       if (fillable(r, c)) fill = col(r, c);
       else {
         for (let d = 1; d < N; d++) {
-          const order = c < 12 ? [c + d, c - d] : [c - d, c + d];
+          const order = c < N / 2 ? [c + d, c - d] : [c - d, c + d];
           const hit = order.find(cc => inside(r, cc) && fillable(r, cc));
           if (hit !== undefined) { fill = col(r, hit); break; }
         }
       }
-      const fillBack = fill !== skin && leftSkin < c && tally.has(fill) ? skin : fill;
+      // front-facing: the back shows what the front does
+      const fillBack = fill;
       let fromTop = 0;
       while (r - fromTop - 1 >= 0 && solid(r - fromTop - 1, c)) fromTop++;
       const isBody = body(r, c);
-      const anchor = isBody ? 'center' : anchorOf.get(`${r},${c}`) ?? 'center';
+      const anchor = 'center';
       row.push({ color: col(r, c), role: isBody ? 'body' : 'protrusion', anchor, fromTop, fill, fillBack, depthFrom: depthFrom.get(`${r},${c}`) });
     }
     px.push(row);

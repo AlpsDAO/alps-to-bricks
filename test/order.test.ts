@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildModel, type Model } from '../src/core/build';
-import { detectPunk } from '../src/core/detect';
 import { brickLinkXML } from '../src/export/parts';
 import { brickLinkRemainderXML, orderSummary, PAB_MAX_LINES, PAB_MAX_QTY, pickABrickFiles } from '../src/export/order';
-import { load } from './img';
+import { alp } from './alps';
 
 // LEGO's own template, copied from the Pick a Brick "Upload List" dialog (CSV Template link)
 const LEGO_CSV_TEMPLATE = 'elementId,quantity\r\n300321,18\r\n300121,999';
@@ -38,7 +37,8 @@ function expectOrderFilesMatch(m: Model) {
   expect(xmlTotal(brickLinkRemainderXML(m))).toBe(s.brickLinkOnlyPieces);
 }
 
-const PUNKS = ['reference', 'a-1', 'b-1', 'b-3', 'c-2', 'c-5'];
+// a spread of Alps, including the ones with floating details and hanging parts
+const SAMPLE = [0, 12, 42, 146, 154, 261, 277];
 
 describe('order files', () => {
   it('reproduces LEGO\'s CSV template byte for byte', () => {
@@ -62,12 +62,12 @@ describe('order files', () => {
     expect(pickABrickFiles(many)).toEqual([]);                    // unknown parts: nothing for LEGO
   });
 
-  for (const name of PUNKS) for (const size of ['xl', 'mini'] as const) {
-    const grid = detectPunk(load(`public/examples/${name}.png`));
-    it(`${name} ${size}: Pick a Brick + BrickLink files add up to the parts list`, () => {
+  for (const id of SAMPLE) for (const size of ['xl', 'mini'] as const) {
+    const grid = alp(id);
+    it(`Alp ${id} ${size}: Pick a Brick + BrickLink files add up to the parts list`, () => {
       expectOrderFilesMatch(buildModel(grid, size));
     });
-    it(`${name} ${size}: "Prefer parts available at LEGO" still holds together`, () => {
+    it(`Alp ${id} ${size}: "Prefer parts available at LEGO" still holds together`, () => {
       const m = buildModel(grid, size, { preferLego: true });
       expect(m.checks.floating, m.notes.join(' ')).toBe(0);
       expect(m.checks.collisions).toBe(0);

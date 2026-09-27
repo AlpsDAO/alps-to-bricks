@@ -54,8 +54,9 @@ export const BRICK_COLORS: BrickColor[] = [
 export const COLOR_BY_ID = new Map(BRICK_COLORS.map(c => [c.id, c]));
 export const BLACK = 11, TRANS_CLEAR = 12, BASE_GRAY = 85;
 const LAB = new Map<number, Lab>(BRICK_COLORS.map(c => [c.id, rgbToLab(hexToRgb(c.hex))]));
-// Trans-Clear is reserved for support pieces; never matched from the image.
-const MATCHABLE = BRICK_COLORS.filter(c => c.id !== TRANS_CLEAR);
+// Alps are drawn in solid colours only: transparent bricks are never matched from an Alp's pixels
+// (Trans-Clear is still used for support pieces).
+const MATCHABLE = BRICK_COLORS.filter(c => !c.trans);
 /** A transparent colour is only used for small details (glasses lenses, etc.). */
 const TRANS_MAX_PIXELS = 16;
 const MAX_EXTRA = 8;

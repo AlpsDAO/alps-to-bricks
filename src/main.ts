@@ -1,7 +1,8 @@
 import type { Model, SizeId } from './core/build';
-import { rgbToHex } from './core/color';
-import type { PunkGrid, RGBAImage } from './core/detect';
-import { Viewer } from './viewer/scene';
+import type { PunkGrid } from './core/detect';
+import { alpCount, alpGrid, drawAlp, fetchSeed, GRID, traitNames, type AlpSeed } from './alps/alps';
+import knownSeeds from './alps/seeds.json';
+import { SKY, Viewer } from './viewer/scene';
 import { brickLinkXML, partsCSV } from './export/parts';
 import { brickLinkRemainderXML, orderSummary, pickABrickFiles } from './export/order';
 import { icon } from './export/pdf';
@@ -20,70 +21,66 @@ const viewer = new Viewer($('view'), { lowPoly: isPhone, label: '' });
 viewer.onFinished = () => { $('hint').hidden = false; };
 
 let grid: PunkGrid | null = null;
-let size: SizeId = 'xl';
+let size: SizeId = 'mini';
 // one model per size and "prefer LEGO parts" choice
 const models = new Map<string, Model>();
 let preferLego = false;
 const mkey = (s: SizeId) => `${s}|${preferLego}`;
 
 // ---------- input ----------
-async function fileToImage(blob: Blob): Promise<RGBAImage> {
-  const bmp = await createImageBitmap(blob);
-  const k = Math.min(1, 3000 / Math.max(bmp.width, bmp.height));
-  const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const x = c.getContext('2d', { willReadFrequently: true })!;
-  x.imageSmoothingEnabled = false;
-  x.drawImage(bmp, 0, 0, w, h);
-  const d = x.getImageData(0, 0, w, h);
-  return { width: w, height: h, data: d.data };
-}
-/** Punk #n, cut from the official 10,000-Punk image (public/punks.png, loaded on first use), on the usual blue background. */
-let sheet: Promise<ImageData> | null = null;
-async function punkByNumber(n: number): Promise<RGBAImage> {
-  sheet ??= fetch('./punks.png').then(r => { if (!r.ok) throw new Error(); return r.blob(); })
-    .then(b => createImageBitmap(b, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }))
-    .then(bmp => { const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height; const x = c.getContext('2d', { willReadFrequently: true })!; x.drawImage(bmp, 0, 0); return x.getImageData(0, 0, c.width, c.height); })
-    .catch(e => { sheet = null; throw e; });
-  const d = await sheet, X = (n % 100) * 24, Y = Math.floor(n / 100) * 24, BG = [0x63, 0x85, 0x96];
-  const data = new Uint8ClampedArray(24 * 24 * 4);
-  for (let y = 0; y < 24; y++) for (let x = 0; x < 24; x++) {
-    const o = ((Y + y) * d.width + X + x) * 4, a = d.data[o + 3] / 255, k = (y * 24 + x) * 4;
-    for (let i = 0; i < 3; i++) data[k + i] = Math.round(d.data[o + i] * a + BG[i] * (1 - a));
-    data[k + 3] = 255;
-  }
-  return { width: 24, height: 24, data };
-}
-$('by-number').addEventListener('submit', async e => {
-  e.preventDefault();
-  const raw = $<HTMLInputElement>('punk-number').value.trim();
-  if (!/^\d{1,4}$/.test(raw)) { showError('Type a Punk number from 0 to 9999.'); return; }
-  const n = +raw;
-  showError(null); $('result').hidden = false; busy(`Finding Punk #${n}…`);
-  let img: RGBAImage;
-  try { img = await punkByNumber(n); } catch { busy(null); showError('We couldn’t load the Punks. Check your connection, or drop your image instead.'); return; }
-  const plate = $<HTMLInputElement>('punkno'); plate.value = String(n);
-  await start(img);
-  viewer.setLabel(plateLabel());
-});
+// Seeds of the Alps minted when this was built ship with the site, so they build instantly; newer Alps
+// are read from the token contract
+const known = knownSeeds as Record<string, number[]>;
+const seedFrom = (s: number[]): AlpSeed => ({ background: s[0], body: s[1], accessory: s[2], head: s[3], glasses: s[4] });
+let latest = Object.keys(known).length - 1;
+const showLatest = () => { $('latest').textContent = String(latest); $<HTMLInputElement>('alp-number').placeholder = String(latest); };
+showLatest();
+alpCount().then(n => { if (n - 1 > latest) { latest = n - 1; showLatest(); } }, () => undefined);
+const seedOf = (id: number): Promise<AlpSeed> => (known[id] ? Promise.resolve(seedFrom(known[id])) : fetchSeed(id));
 
-/** An example Punk from public/examples (real Punks, used with permission). */
-async function exampleImage(file: string): Promise<RGBAImage> {
-  const res = await fetch(`./examples/${file}`);
-  return fileToImage(await res.blob());
-}
-
-async function start(image: RGBAImage) {
-  showError(null);
-  $('result').hidden = false;
+let seed: AlpSeed | null = null;
+async function buildAlp(id: number) {
+  showError(null); $('result').hidden = false;
   $('sec-bust').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  busy('Reading your Punk…');
-  const r = await build({ size, image, preferLego });
+  busy(`Finding Alp #${id}…`);
+  let s: AlpSeed;
+  try { s = await seedOf(id); }
+  catch (e) {
+    busy(null); $('result').hidden = !grid;
+    showError((e as Error).message === 'not-minted'
+      ? `Alp #${id} hasn’t been minted yet. The latest is Alp #${latest}.`
+      : 'We couldn’t reach Ethereum to read this Alp. Check your connection and try again.');
+    return;
+  }
+  seed = s;
+  $<HTMLInputElement>('alp-number').value = String(id);
+  $<HTMLInputElement>('alpno').value = String(id);
+  history.replaceState(null, '', `?alp=${id}`);
+  await start(alpGrid(s));
+  viewer.setLabel(plateLabel());
+}
+$('by-number').addEventListener('submit', e => {
+  e.preventDefault();
+  const raw = $<HTMLInputElement>('alp-number').value.trim();
+  if (!/^\d{1,5}$/.test(raw)) { showError(`Type an Alp number from 0 to ${latest}.`); return; }
+  buildAlp(+raw);
+});
+$('random').addEventListener('click', () => buildAlp(Math.floor(Math.random() * (latest + 1))));
+
+async function start(g: PunkGrid) {
+  busy('Designing your bust…');
+  const r = await build({ size, grid: g, preferLego });
   if (!r.ok) { busy(null); $('result').hidden = !grid; showError(r.message); return; }
   grid = r.grid;
   models.clear();
   models.set(mkey(size), r.model);
   drawGrid(r.grid);
+  // the bust sits on the Alp's own background, in the view, the video and the booklet
+  if (r.grid.background) {
+    const bg = `rgb(${r.grid.background.join(',')})`;
+    SKY.set(bg);
+    $('view').parentElement!.style.background = bg;
+  }
   show(r.model, r.ms);
 }
 
@@ -122,10 +119,9 @@ function showError(msg: string | null) {
   const e = $('error'); e.hidden = !msg; e.textContent = msg ?? '';
 }
 function drawGrid(g: PunkGrid) {
-  const c = $<HTMLCanvasElement>('grid'), x = c.getContext('2d')!, k = c.width / 24;
-  x.fillStyle = g.background ? rgbToHex(g.background) : '#638596'; x.fillRect(0, 0, c.width, c.height);
-  g.cells.forEach((row, r) => row.forEach((v, col) => { if (v >= 0) { x.fillStyle = rgbToHex(g.colors[v].rgb); x.fillRect(col * k, r * k, k, k); } }));
-  $('read-text').textContent = `24 × 24 pixels, ${g.colors.length} colours`;
+  drawAlp($<HTMLCanvasElement>('grid'), g);
+  const t = seed && traitNames(seed);
+  $('read-text').textContent = `${GRID} × ${GRID} pixels, ${g.colors.length} colours${t ? ` · ${t.head}, ${t.glasses}, ${t.body}, ${t.accessory}` : ''}`;
 }
 function renderChecks(m: Model, ms: number) {
   const c = m.checks;
@@ -150,29 +146,15 @@ function renderChecks(m: Model, ms: number) {
 }
 
 // ---------- wiring ----------
-const drop = $('drop'), file = $<HTMLInputElement>('file');
-drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); } });
-file.addEventListener('change', () => { const f = file.files?.[0]; if (f) fileToImage(f).then(start, () => showError('We couldn’t open this file. Use a PNG or JPG image.')); file.value = ''; });
-['dragenter', 'dragover'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add('over'); }));
-['dragleave', 'drop'].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove('over'); }));
-drop.addEventListener('drop', e => {
-  const f = [...((e as DragEvent).dataTransfer?.files ?? [])].find(f => f.type.startsWith('image/'));
-  if (f) fileToImage(f).then(start, () => showError('We couldn’t open this file. Use a PNG or JPG image.'));
-  else showError('That doesn’t look like an image. Drop a PNG or JPG of your Punk.');
-});
-window.addEventListener('paste', e => {
-  const f = [...(e.clipboardData?.files ?? [])].find(f => f.type.startsWith('image/'));
-  if (f) fileToImage(f).then(start, () => showError('We couldn’t read the pasted image.'));
-});
 document.querySelectorAll<HTMLButtonElement>('.size').forEach(b => b.addEventListener('click', () => setSize(b.dataset.size as SizeId)));
 $('replay').addEventListener('click', () => { $('hint').hidden = true; viewer.play(); });
 $('skip').addEventListener('click', () => viewer.skip());
-export const plateLabel = () => { const n = $<HTMLInputElement>('punkno').value.replace(/\D/g, '').slice(0, 5); return n ? `#${n}` : ''; };
-$('punkno').addEventListener('input', () => viewer.setLabel(plateLabel()));  // the reader follows below
+export const plateLabel = () => { const n = $<HTMLInputElement>('alpno').value.replace(/\D/g, '').slice(0, 5); return n ? `#${n}` : ''; };
+$('alpno').addEventListener('input', () => viewer.setLabel(plateLabel()));  // the reader follows below
 
 // ---------- exports ----------
 const current = () => models.get(mkey(size)) ?? null;
-const baseName = () => `${plateLabel() ? 'punk-' + plateLabel().slice(1) : 'my-punk'}-${size}`;
+const baseName = () => `${plateLabel() ? 'alp-' + plateLabel().slice(1) : 'my-alp'}-${size}`;
 function save(blob: Blob, name: string) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name;
@@ -262,7 +244,7 @@ $('page-view').addEventListener('keydown', e => { if (e.key === 'ArrowRight') sh
   $('page-view').addEventListener('pointerup', e => { if (x0 !== null && Math.abs(e.clientX - x0) > 40) showPage(pageNo + (e.clientX < x0 ? 1 : -1)); x0 = null; });
 }
 let labelTimer = 0;
-$('punkno').addEventListener('input', () => {
+$('alpno').addEventListener('input', () => {
   clearTimeout(labelTimer);
   labelTimer = window.setTimeout(() => { const m = current(); if (m) { const keep = pageNo; renderReader(m).then(() => showPage(keep)); } renderBustSub(); }, 500);
 });
@@ -277,11 +259,11 @@ $('dl-kit').addEventListener('click', () => run('Kit', async () => {
   const m = current()!, name = baseName();
   progress('Drawing the instructions…', 0);
   const pdf = await makeInstructions(m, grid!, { label: plateLabel(), renderSize: isPhone ? 800 : 1100, onProgress: (d, t) => progress(`Drawing page ${d} of ${t}…`, d / t) });
-  const readme = [`${name} — made with Punk to Bricks`, '', `${m.checks.pieces} pieces · ${m.steps.length} steps · ${m.bom.length} lots · about ${m.dims.join(' × ')} cm`, '',
+  const readme = [`${name} — made with Alps to Bricks (bricks.alps.wtf)`, '', `${m.checks.pieces} pieces · ${m.steps.length} steps · ${m.bom.length} lots · about ${m.dims.join(' × ')} cm`, '',
     `${name}-instructions.pdf   step-by-step instructions, one page per layer`, `${name}-parts.csv   parts list (BrickLink part and colour numbers)`, '',
     'To order the bricks, use "Buy the bricks" on the site: it makes your LEGO Pick a Brick and BrickLink lists.', '',
     'Models are generated automatically and checked by software only. They have NOT been physically built. Provided "as is", without warranty of any kind.',
-    'Unofficial fan project · Not affiliated with, sponsored or endorsed by the LEGO Group, BrickLink or the CryptoPunks project. LEGO® is a trademark of the LEGO Group. Parts data: Rebrickable.', ''].join('\r\n');
+    'Fan project by Alps · Not affiliated with, sponsored or endorsed by the LEGO Group or BrickLink. LEGO® is a trademark of the LEGO Group. Parts data: Rebrickable.', ''].join('\r\n');
   save(await makeZip([{ name: `${name}-instructions.pdf`, data: pdf }, { name: `${name}-parts.csv`, data: partsCSV(m) }, { name: 'README.txt', data: readme }]), `${name}-kit.zip`);
 }));
 for (const format of ['square', 'story'] as const) $(format === 'square' ? 'vid-square' : 'vid-story').addEventListener('click', () => run('Video', async () => {
@@ -408,36 +390,37 @@ const secObserver = new IntersectionObserver(es => {
 ['sec-bust', 'sec-manual', 'sec-buy'].forEach(id => secObserver.observe($(id)));
 function renderBustSub() {
   const m = current(); if (!m) return;
-  $('bust-sub').textContent = `${plateLabel() ? `Punk ${plateLabel()} · ` : ''}${m.size === 'xl' ? 'XL' : 'Mini'} · built and checked in your browser`;
+  $('bust-sub').textContent = `${plateLabel() ? `Alp ${plateLabel()} · ` : ''}${m.size === 'xl' ? 'XL' : 'Mini'} · built and checked in your browser`;
 }
 function shareLink() {
-  const m = current();
+  const m = current(), label = plateLabel();
   const text = m
-    ? `I turned my CryptoPunk into a ${m.checks.pieces.toLocaleString('en')}-piece brick bust you can really build 🧱\n\nMade with Punk to Bricks, inspired by @victormustar's Microduck.`
-    : 'Turn your CryptoPunk into a brick bust you can really build 🧱';
-  const url = location.origin + location.pathname;
+    ? `I turned ${label ? `Alp ${label}` : 'my Alp'} into a ${m.checks.pieces.toLocaleString('en')}-piece brick bust you can really build 🧱\n\nMade with Alps to Bricks`
+    : 'Turn your Alp into a brick bust you can really build 🧱';
+  const url = location.origin + location.pathname + (label ? `?alp=${label.slice(1)}` : '');
   $<HTMLAnchorElement>('share-x').href = `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
 }
 $('share-x').addEventListener('pointerdown', shareLink);
 $('share-x').addEventListener('focus', shareLink);
 
-const examples = [
-  { file: 'reference.png', title: 'The original bust' },
-  ...['a-1', 'b-1', 'b-2', 'b-3', 'b-4', 'b-5', 'b-6', 'c-1', 'c-2', 'c-3', 'c-4', 'c-5', 'c-6', 'c-7', 'c-8', 'c-9'].map(n => ({ file: `${n}.png`, title: 'Example Punk' })),
-];
-for (const ex of examples) {
+// A few Alps to try, drawn straight from their traits
+for (const id of [0, 12, 42, 49, 146, 154, 213, 261, 272, 275, 276, 277].filter(id => known[id])) {
   const b = document.createElement('button');
-  b.title = ex.title;
-  const img = document.createElement('img');
-  img.src = `./examples/${ex.file}`; img.alt = ex.title; img.width = img.height = 24;
-  b.append(img);
-  b.addEventListener('click', () => exampleImage(ex.file).then(start, () => showError('We couldn’t load this example.')));
+  b.title = `Alp #${id}`;
+  const c = document.createElement('canvas'); c.width = c.height = GRID;
+  drawAlp(c, alpGrid(seedFrom(known[id])));
+  b.append(c);
+  b.addEventListener('click', () => buildAlp(id));
   $('examples').append(b);
 }
 setSize(size);
+// a shared link (?alp=277) builds that Alp straight away
+{
+  const n = new URLSearchParams(location.search).get('alp');
+  if (n && /^\d{1,5}$/.test(n)) buildAlp(+n);
+}
 
 // dev/test hook: lets scripts drive the viewer frame by frame
 if (import.meta.env.DEV) {
-  Promise.all([import('./core/detect'), import('./core/build')]).then(([d, b]) =>
-    Object.assign(window, { ptb: { viewer, start, exampleImage, examples, setSize, build, detectPunk: d.detectPunk, buildModel: b.buildModel, fileToImage } }));
+  import('./core/build').then(b => Object.assign(window, { ptb: { viewer, start, buildAlp, setSize, build, buildModel: b.buildModel } }));
 }

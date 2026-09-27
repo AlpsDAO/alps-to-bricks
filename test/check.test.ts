@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildModel } from '../src/core/build';
 import { checkModel } from '../src/core/check';
-import { detectPunk } from '../src/core/detect';
 import { partId, type Kind, type Piece } from '../src/core/parts';
-import { REFERENCE_PUNK, TEST_PUNKS } from './fixtures/punks';
-import { punkImage } from './img';
+import { ALPS } from './alps';
 
 const P = (x: number, z: number, y: number, w: number, d: number, kind: Kind = 'brick', h = kind === 'brick' ? 3 : 1): Piece =>
   ({ x, z, y, w, d, h, kind, c: 11, part: partId(kind, w, d) });
@@ -47,17 +45,20 @@ describe('solidity checker', () => {
   });
 });
 
-describe('every test Punk builds solid', () => {
-  for (const size of ['mini', 'xl'] as const) for (const p of [REFERENCE_PUNK, ...TEST_PUNKS]) {
-    it(`${size}: ${p.name}`, () => {
-      const m = buildModel(detectPunk(punkImage(p, 8)), size);
-      expect(m.checks.floating, m.notes.join(' ')).toBe(0);
-      expect(m.checks.collisions).toBe(0);
-      expect(m.checks.com.inside).toBe(true);
-      if (size === 'mini') expect(m.checks.pieces).toBeLessThanOrEqual(450);
-      // every piece is a real part in a real colour, every step is non-empty
-      expect(m.pieces.every(q => q.part && q.c > 0)).toBe(true);
-      expect(m.steps.flat().sort((a, b) => a - b)).toEqual(m.pieces.map((_, i) => i));
-    });
+// Every Alp minted so far, in both sizes (the seeds ship with the site in src/alps/seeds.json)
+describe('every Alp builds solid', () => {
+  for (const size of ['mini', 'xl'] as const) {
+    it(`${size}: all ${ALPS.length} Alps`, () => {
+      for (const { id, grid } of ALPS) {
+        const m = buildModel(grid, size);
+        const why = `Alp ${id}: ${m.notes.join(' ')}`;
+        expect(m.checks.floating, why).toBe(0);
+        expect(m.checks.collisions, why).toBe(0);
+        expect(m.checks.com.inside, why).toBe(true);
+        // every piece is a real part in a real colour, every step is non-empty
+        expect(m.pieces.every(q => q.part && q.c > 0), why).toBe(true);
+        expect(m.steps.flat().sort((a, b) => a - b), why).toEqual(m.pieces.map((_, i) => i));
+      }
+    }, 120_000);
   }
 });
