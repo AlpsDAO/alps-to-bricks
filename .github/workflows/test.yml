@@ -1,0 +1,19 @@
+name: Test
+
+# Pull requests (new hand-made heads, see HEADS.md) are tested before they're merged; pushes to main
+# are tested by the deploy workflow.
+on:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build

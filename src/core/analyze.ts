@@ -240,10 +240,13 @@ export function analyze(g: PunkGrid): Analysis {
       // the back of the head shows the head's colour and the back of the torso the body's, not the face
       // or the accessory; without trait info the back shows what the front does
       let fillBack = onHead ? skin : (part === PART.body && g.style?.body === 'front') || printed(r, c) ? bodyColor ?? fill : fill;
+      // the head carries on behind its glasses: the colour the art has under them
+      const under = part === PART.glasses && (g.under?.[r]?.[c] ?? -1) >= 0 ? brickOf[g.under![r][c]] : -1;
+      if (under >= 0) { fill = under; if (g.style?.head !== 'cylinder') fillBack = skin; }
       // a cylinder (a barrel, a mug) shows its own pattern all the way round: staves and hoops carry on
-      // round the back; behind the glasses it's the head's colour just above or below them
+      // round the back, behind the glasses too
       if (onHead && g.style?.head === 'cylinder') {
-        let k = part === PART.head ? col(r, c) : -1;
+        let k = part === PART.head ? col(r, c) : under;
         for (let d = 1; k < 0 && d < N; d++) for (const rr of [r - d, r + d]) if (k < 0 && inside(rr, c) && partOf(rr, c) === PART.head) k = col(rr, c);
         fill = fillBack = k >= 0 ? k : skin;
       }

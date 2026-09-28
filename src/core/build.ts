@@ -42,7 +42,7 @@ export const SIZES_SPEC: Record<SizeId, SizeSpec> = {
     baseMargin: { side: 1, front: 2, back: 1 }, cantilever: 6, slopes: false, nameplate: [4, 1],
   },
   xl: {
-    id: 'xl', sx: 2, D: 20, front: 2, taper: [4, 2], slab: 8, frontSlab: 4, wall: 2, chamfer: 0,
+    id: 'xl', sx: 2, D: 16, front: 2, taper: [4, 2], slab: 8, frontSlab: 4, wall: 2, chamfer: 0,
     rowLayers: [{ kind: 'brick', h: 3 }, { kind: 'plate', h: 1 }, { kind: 'plate', h: 1 }],
     baseLayers: [{ kind: 'brick', h: 3 }, { kind: 'brick', h: 3 }],
     baseMargin: { side: 2, front: 4, back: 2 }, cantilever: 12, slopes: true, nameplate: [6, 2],
@@ -446,57 +446,94 @@ function voxelize(grid: PunkGrid, A: Analysis, S: SizeSpec) {
     }
     rowCells.set(r, cells);
   }
-  if (grid.headModel) useHeadModel(grid.headModel, A, rowCells, sx, D);
-
-  // ---------- the glasses round the sides: the strap (or arms) meets the frame right behind the front,
-  // the strap's clip shows its A on both sides, and gnargles' arms hook down behind the ears ----------
-  const G = A.glasses;
-  if (G && !grid.headModel) {
-    const zGlyph = Math.max(1, sx), zEars = Math.floor(D / 2) - 1;
-    // only the solid head and the glasses themselves: loose details beside the head (rings, drips) keep
-    // their colour, which the pieces holding them rely on
-    const onHead = (r: number, x: number) => {
-      const p = A.px[r]?.[Math.floor(x / sx)];
-      return !!p && !p.depthFrom && (p.part === PART.glasses || (p.part === PART.head && p.role === 'body'));
-    };
-    // on the head's outermost pixel columns, wherever they reach at that depth
-    const paint = (r: number, z: number, colour: number) => {
-      const cells = rowCells.get(r); if (!cells) return;
-      const cols = [...Array(N).keys()].filter(c => onHead(r, c * sx));
-      if (!cols.length) return;
-      for (const x of [cols[0] * sx, cols[cols.length - 1] * sx + sx - 1]) if (cells.has(key(x, z))) cells.set(key(x, z), colour);
-    };
-    for (const r of G.rows) for (let z = 1; z <= (G.kind === 'strap' ? D - 1 : zEars); z++) {
-      const j = Math.floor((z - zGlyph) / sx);
-      paint(r, z, G.glyph && j >= 0 && j < 3 && G.glyph.pattern[r - G.rows[0]][j] ? G.glyph.color : G.color);
+  // the head's cells in each row: the solid head and the glasses (loose details beside it, like rings
+  // and drips, keep their colour, which the pieces holding them rely on), or a hand-made head's voxels
+  const clearRgb = new Set(grid.colors.filter(c => c.clear).map(c => c.rgb.join(',')));
+  const headCells = grid.headModel ? useHeadModel(grid.headModel, A, rowCells, sx, clearRgb) : new Map<number, Set<number>>();
+  if (!grid.headModel) for (const [r, cells] of rowCells) {
+    const own = new Set<number>();
+    for (const k of cells.keys()) {
+      const p = A.px[r]?.[Math.floor(kx(k) / sx)];
+      if (p && !p.depthFrom && (p.part === PART.glasses || (p.part === PART.head && p.role === 'body'))) own.add(k);
     }
-    if (G.kind === 'arms') for (const r of [G.rows[0] + 1, G.rows[0] + 2]) for (let z = zEars - sx + 1; z <= zEars; z++) paint(r, z, G.color);
+    headCells.set(r, own);
   }
+  if (A.glasses) wearGlasses(A.glasses, rowCells, headCells, sx, D);
 
   return { rows, rTop, rBot, rowCells, supportCell };
 }
 
-/** A hand-made head (a .vox model, see src/alps/vox.ts) replaces the automatic one: its voxels become the
- * head's cells, the front keeping the Alp's own pixels. */
-function useHeadModel(m: HeadModel, A: Analysis, rowCells: Map<number, Map<number, number>>, sx: number, D: number) {
+/** Whatever glasses the Alp wears, round whatever head it has: the strap (or arms) runs round the head's
+ * surface right behind the front, the strap's clip shows its A on both sides, and gnargles' arms hook
+ * down behind the ears. Only the head's surface is painted, never its front: that's the pixel art. */
+function wearGlasses(G: NonNullable<Analysis['glasses']>, rowCells: Map<number, Map<number, number>>, headCells: Map<number, Set<number>>, sx: number, D: number) {
+  const zGlyph = Math.max(1, sx), ears = Math.floor(D / 2) - 1;
+  const surface = (r: number, pick: (x: number, z: number, behind: number, side: boolean) => number | null) => {
+    const cells = rowCells.get(r), own = headCells.get(r);
+    if (!cells || !own?.size) return;
+    const front = new Map<number, number>();   // column -> its front-most z
+    for (const k of own) front.set(kx(k), Math.min(front.get(kx(k)) ?? Infinity, kz(k)));
+    const rowFront = Math.min(...front.values());
+    for (const k of own) {
+      const x = kx(k), z = kz(k);
+      if (z === front.get(x)) continue;
+      const side = !cells.has(key(x - 1, z)) || !cells.has(key(x + 1, z));
+      if (!side && cells.has(key(x, z + 1))) continue;   // inside: nobody sees it
+      const colour = pick(x, z, z - rowFront, side);
+      if (colour !== null) cells.set(k, colour);
+    }
+  };
+  for (const r of G.rows) surface(r, (_x, _z, behind, side) => {
+    if (G.kind === 'arms' && behind > ears) return null;
+    const j = Math.floor((behind - zGlyph) / sx);
+    return G.glyph && side && j >= 0 && j < 3 && G.glyph.pattern[r - G.rows[0]][j] ? G.glyph.color : G.color;
+  });
+  if (G.kind === 'arms') for (const r of [G.rows[0] + 1, G.rows[0] + 2]) surface(r, (_x, _z, behind, side) => (side && behind > ears - sx && behind <= ears ? G.color : null));
+}
+
+/** A hand-made head (src/alps/heads, see HEADS.md) replaces the automatic one: its voxels become the
+ * head's cells, one pixel = one voxel = sx studs each way. The front-most voxel of every pixel shows the
+ * Alp's own pixel (head or glasses), and every pixel of the art is there even if the model left it out. */
+function useHeadModel(m: HeadModel, A: Analysis, rowCells: Map<number, Map<number, number>>, sx: number, clearRgb: Set<string>): Map<number, Set<number>> {
   const brick = new Map<string, number>();
-  const colourOf = (rgb: RGB) => {
-    const k = rgb.join(',');
-    if (!brick.has(k)) brick.set(k, mapColors([{ rgb, count: 999 }], new Set())[0]);
+  // see-through where the model says so, or in the colours this head shows see-through (the barrel's wine)
+  const colourOf = (rgb: RGB, clear = false) => {
+    const k = `${rgb.join(',')}${clear || clearRgb.has(rgb.join(',')) ? ':clear' : ''}`;
+    if (!brick.has(k)) brick.set(k, mapColors([{ rgb, count: 999, clear: k.endsWith(':clear') }], new Set())[0]);
     return brick.get(k)!;
   };
   const onHead = (r: number, c: number) => { const p = A.px[r]?.[c]; return !!p && !p.depthFrom && (p.part === PART.head || p.part === PART.glasses); };
   // out with the automatic head…
   for (const [r, cells] of rowCells) for (const k of [...cells.keys()]) if (onHead(r, Math.floor(kx(k) / sx))) cells.delete(k);
-  // …in with the model's voxels, as deep as the builder allows
+  // …in with the model's voxels (y = 0 is the torso's front; `front` moves the head forward)
+  const vox = new Map<string, { y: number; colour: number }[]>();   // "r,c" -> voxels front to back
   for (const v of m.voxels) {
     const r = N - 1 - v.z, c = v.x;
     if (r < 0 || r >= N || c < 0 || c >= N) continue;
-    const front = v.y === 0 && A.px[r][c] ? A.px[r][c]!.color : colourOf(v.rgb);
+    const list = vox.get(`${r},${c}`) ?? [];
+    list.push({ y: v.y - (m.front ?? 0), colour: colourOf(v.rgb, v.clear) });
+    vox.set(`${r},${c}`, list);
+  }
+  // every pixel of the art shows, at the front of its row if the model has nothing there
+  for (let r = 0; r < N; r++) {
+    const ys = [...vox.entries()].filter(([k]) => +k.split(',')[0] === r).flatMap(([, l]) => l.map(v => v.y));
+    const rowFront = ys.length ? Math.min(...ys) : -(m.front ?? 0);
+    for (let c = 0; c < N; c++) if (onHead(r, c) && !vox.has(`${r},${c}`)) vox.set(`${r},${c}`, [{ y: rowFront, colour: A.px[r][c]!.color }]);
+  }
+  const headCells = new Map<number, Set<number>>();
+  for (const [rc, list] of vox) {
+    const [r, c] = rc.split(',').map(Number);
+    list.sort((a, b) => a.y - b.y);
     let cells = rowCells.get(r);
     if (!cells) rowCells.set(r, cells = new Map());
-    for (let z = v.y * sx; z < Math.min(D, (v.y + 1) * sx); z++) for (let i = 0; i < sx; i++) cells.set(key(c * sx + i, z), front);
+    const own = headCells.get(r) ?? new Set<number>();
+    list.forEach((v, i) => {
+      const colour = i === 0 && A.px[r][c] ? A.px[r][c]!.color : v.colour;
+      for (let z = v.y * sx; z < (v.y + 1) * sx; z++) for (let i2 = 0; i2 < sx; i2++) { const k = key(c * sx + i2, z); cells!.set(k, colour); own.add(k); }
+    });
+    headCells.set(r, own);
   }
+  return headCells;
 }
 
 /** A head's automatic shape as a voxel model (Mini scale: one voxel per pixel), to start modelling from. */
@@ -508,7 +545,7 @@ export function headVoxels(grid: PunkGrid): VoxModel {
   for (const [r, cells] of rowCells) for (const [k, c] of cells) {
     const p = A.px[r][kx(k)];
     if (!p || p.depthFrom || (p.part !== PART.head && p.part !== PART.glasses) || c === TRANS_CLEAR) continue;
-    voxels.push({ x: kx(k), y: kz(k), z: N - 1 - r, rgb: hexToRgb(COLOR_BY_ID.get(c)!.hex) });
+    voxels.push({ x: kx(k), y: kz(k), z: N - 1 - r, rgb: hexToRgb(COLOR_BY_ID.get(c)!.hex), ...(COLOR_BY_ID.get(c)!.trans ? { clear: true } : {}) });
   }
   return { size: [N, S.D, N], voxels };
 }

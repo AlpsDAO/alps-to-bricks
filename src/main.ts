@@ -195,12 +195,18 @@ export const plateLabel = () => { const n = $<HTMLInputElement>('alpno').value.r
 $('alpno').addEventListener('input', () => viewer.setLabel(plateLabel()));  // the reader follows below
 
 // ---------- exports ----------
-$('dl-head').addEventListener('click', async () => {
+// the head alone (no glasses: they're added round any head), as a starting point to model it: the
+// repo's text format, or MagicaVoxel's
+async function headDownload(format: 'json' | 'vox') {
   if (!seed || !grid) return;
-  const [{ headVoxels }, { writeVox }] = await Promise.all([import('./core/build'), import('./alps/vox')]);
-  const { headName } = await import('./alps/alps');
-  save(new Blob([writeVox(headVoxels(grid)) as BlobPart], { type: 'application/octet-stream' }), `${headName(seed)}.vox`);
-});
+  const [{ headVoxels }, { writeVox }, { writeHeadFile }, { headName }] = await Promise.all([import('./core/build'), import('./alps/vox'), import('./alps/headModel'), import('./alps/alps')]);
+  const bare = await withHeadModel(alpGrid(seed, { without: ['glasses'] }), seed);
+  const model = headVoxels(bare), name = headName(seed);
+  if (format === 'vox') save(new Blob([writeVox(model) as BlobPart], { type: 'application/octet-stream' }), `${name}.vox`);
+  else save(new Blob([writeHeadFile(model, name)], { type: 'application/json' }), `${name}.json`);
+}
+$('dl-head').addEventListener('click', () => headDownload('json'));
+$('dl-head-vox').addEventListener('click', () => headDownload('vox'));
 const current = () => models.get(mkey(size)) ?? null;
 const baseName = () => `${plateLabel() ? 'alp-' + plateLabel().slice(1) : 'my-alp'}-${size}`;
 function save(blob: Blob, name: string) {

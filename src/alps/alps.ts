@@ -49,18 +49,26 @@ export function styleOf(seed: AlpSeed): GridStyle {
 }
 
 /** The Alp's pixels, in the same shape a detected Punk has. Colour indices point into `colors`. */
-export function alpGrid(seed: AlpSeed): PunkGrid {
+export function alpGrid(seed: AlpSeed, opts: { without?: ('glasses' | 'accessory')[] } = {}): PunkGrid {
   const pal = Array.from({ length: GRID }, () => Array(GRID).fill(0) as number[]);
   const parts = Array.from({ length: GRID }, () => Array(GRID).fill(-1) as number[]);
   const { images, palette, bgcolors } = imageData;
   paint(pal, parts, PART.body, images.bodies[seed.body].data);
-  paint(pal, parts, PART.accessory, images.accessories[seed.accessory].data);
+  if (!opts.without?.includes('accessory')) paint(pal, parts, PART.accessory, images.accessories[seed.accessory].data);
   paint(pal, parts, PART.head, images.heads[seed.head].data);
-  paint(pal, parts, PART.glasses, images.glasses[seed.glasses].data);
+  // what the head looks like under its glasses (every head is drawn whole, the glasses go on top)
+  const headUnder = pal.map((row, r) => row.map((p, c) => (parts[r][c] === PART.head ? p : 0)));
+  // without its glasses, a head shows its whole face: the starting point for modelling it
+  if (!opts.without?.includes('glasses')) paint(pal, parts, PART.glasses, images.glasses[seed.glasses].data);
   // the head's see-through colours get their own entries, so the same colour elsewhere stays solid
   const clear = new Set(spec.heads[bare(images.heads[seed.head].filename)]?.clear ?? []);
   const index = new Map<string, number>();
   const colors: { rgb: RGB; count: number; clear?: boolean }[] = [];
+  const indexOf = (p: number) => {
+    let k = index.get(String(p));
+    if (k === undefined) { k = colors.length; index.set(String(p), k); colors.push({ rgb: hexToRgb(`#${palette[p]}`), count: 0 }); }
+    return k;
+  };
   const cells = pal.map((row, r) => row.map((p, c) => {
     if (p === 0) return -1;
     const see = parts[r][c] === PART.head && clear.has(palette[p]);
@@ -70,7 +78,8 @@ export function alpGrid(seed: AlpSeed): PunkGrid {
     colors[k].count++;
     return k;
   }));
-  return { cells, colors, background: hexToRgb(`#${bgcolors[seed.background]}`), box: { x: 0, y: 0, size: GRID }, parts, style: styleOf(seed) };
+  const under = pal.map((row, r) => row.map((_, c) => (parts[r][c] === PART.glasses && headUnder[r][c] ? indexOf(headUnder[r][c]) : -1)));
+  return { cells, colors, background: hexToRgb(`#${bgcolors[seed.background]}`), box: { x: 0, y: 0, size: GRID }, parts, under, style: styleOf(seed) };
 }
 
 /** Trait names, e.g. "head-console-handheld" → "Console handheld". */

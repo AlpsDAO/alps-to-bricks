@@ -13,14 +13,18 @@ export interface PunkGrid {
   box: { x: number; y: number; size: number };
   /** which trait drew each pixel, when known (Alps): see PART; -1 = empty */
   parts?: number[][];
+  /** the head's own colour (index into colors) under each glasses pixel, -1 if none: the head carries
+   * on behind the glasses */
+  under?: number[][];
   /** how the traits are modelled in 3D (Alps): see src/alps/traits3d.json */
   style?: GridStyle;
   /** a hand-made head, replacing the automatic one (see src/alps/vox.ts) */
   headModel?: HeadModel;
 }
 
-/** Voxels of a hand-made head: x = column, y = depth from the front, z = height from the bottom row */
-export interface HeadModel { voxels: { x: number; y: number; z: number; rgb: RGB }[] }
+/** Voxels of a hand-made head: x = column, y = depth from the front, z = height from the bottom row.
+ * front: how many voxels the head's front sits ahead of the torso's front (0 = flush). */
+export interface HeadModel { voxels: { x: number; y: number; z: number; rgb: RGB; clear?: boolean }[]; front?: number }
 
 /** A head's volume: boxy objects, rounded forms, thin things seen face-on (all behind a flat front), or
  * upright cylinders (barrels, mugs, cans) that are round all the way round, front included */

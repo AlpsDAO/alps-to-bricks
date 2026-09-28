@@ -28,7 +28,7 @@ The model builder (`src/core`) is John Karp's, from [Punk to Bricks](https://git
 
 ## Modelling a head by hand
 
-Any head can be modelled properly in [MagicaVoxel](https://ephtracy.github.io/) (free). On the site, build an Alp wearing that head, open "More info" and download the head as a `.vox` file: its automatic shape, one voxel per pixel (x = column, y = depth with the front at y = 0, z = height from the bottom row). Reshape and repaint the sides, back and depth, then save it as `src/alps/heads/<head name>.vox` (the name without `head-`, e.g. `console-handheld.vox`). The builder uses it for every Alp with that head: Mini at one stud per voxel, XL at two. The front always shows the Alp's own pixels, whatever colour the model has there.
+Any head can be modelled properly, as what it really is, one voxel per pixel: **[HEADS.md](HEADS.md)** is the full brief (for people and AI models alike). In short: a head is `src/alps/heads/<head name>.json`, slices from the front to the back, each a 32×32 grid of characters with a palette (or a MagicaVoxel `.vox`). `npx tsx scripts/head-kit.ts <head>` gives you everything about a head to start from, `npx tsx scripts/head-check.ts <head>` checks a model and builds it on test Alps with drawings to look at, and the tests build every hand-made head with every family of glasses. The site's "More info" panel also downloads any head's current model.
 
 ## Develop
 
