@@ -26,7 +26,7 @@ Every trait combines with every other: 248 heads × 200 glasses × 32 bodies × 
 - **Goggles** (165 of them) have a strap at rows 12–14 with a pixel "A" on the clip.
 - **Gnargles** (35) have arms at row 13 that hook down behind the ears.
 
-So give the head a surface at rows 11–16 that a strap can run round. No deep notches there.
+Whatever your head's shape, the glasses sit flat across its front, level with its most forward point behind them. So give the head a surface at rows 11–16 that a strap can run round, with no deep notches.
 
 ## The model: one voxel per pixel
 
@@ -135,7 +135,7 @@ See-through (for `clear`): `#eeeeee` Trans-Clear · `#aeefec` Trans-Light Blue �
 So you can predict the result:
 
 - Each voxel becomes stud cells: one per voxel in Mini, 2×2 in XL. Within a row, cells sit at their depth; front-most voxels take the art's colours.
-- The Alp's glasses go on the front, and their strap or arms are painted round your head's surface on the glasses' rows.
+- The Alp's glasses always sit flat: one plane across the front, level with your head's most forward point behind them. Where your head is further back (the sides of a barrel), the frame fills back to meet it. Their strap or arms are painted round your head's surface on the glasses' rows.
 - Bricks are stacked through the whole model for the fewest pieces, with plates wherever colours change within a brick's height. Pixel rows keep their exact height, so the proportions are always right.
 - Anything that can't be held gets a clear support column, or a hidden bridge piece at the back. The checks (floating pieces, collisions, balance) run on the final list of bricks.
 

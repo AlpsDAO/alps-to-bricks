@@ -458,9 +458,36 @@ function voxelize(grid: PunkGrid, A: Analysis, S: SizeSpec) {
     }
     headCells.set(r, own);
   }
+  flattenGlasses(A, rowCells, headCells, sx);
   if (A.glasses) wearGlasses(A.glasses, rowCells, headCells, sx, D);
 
   return { rows, rTop, rBot, rowCells, supportCell };
+}
+
+/** The glasses sit flat across the front, whatever shape the head is: on one plane, level with the head's
+ * most forward point behind them, with the frame filling back to wherever the head's surface is (the
+ * sides of a barrel curve away behind them). */
+function flattenGlasses(A: Analysis, rowCells: Map<number, Map<number, number>>, headCells: Map<number, Set<number>>, sx: number) {
+  const glasses: [number, number][] = [];
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) { const p = A.px[r][c]; if (p && !p.depthFrom && p.part === PART.glasses) glasses.push([r, c]); }
+  if (!glasses.length) return;
+  const frontOf = (r: number, c: number) => {
+    let z = Infinity;
+    for (const k of rowCells.get(r)?.keys() ?? []) if (Math.floor(kx(k) / sx) === c) z = Math.min(z, kz(k));
+    return z;
+  };
+  const fronts = glasses.map(([r, c]) => frontOf(r, c)).filter(Number.isFinite);
+  if (!fronts.length) return;
+  const plane = Math.min(...fronts);
+  glasses.forEach(([r, c]) => {
+    const cells = rowCells.get(r)!, own = headCells.get(r) ?? new Set<number>();
+    const back = frontOf(r, c), colour = A.px[r][c]!.color;
+    for (let z = plane; z < (Number.isFinite(back) ? back : plane + 1); z++) for (let i = 0; i < sx; i++) {
+      const k = key(c * sx + i, z);
+      cells.set(k, colour); own.add(k);
+    }
+    headCells.set(r, own);
+  });
 }
 
 /** Whatever glasses the Alp wears, round whatever head it has: the strap (or arms) runs round the head's
