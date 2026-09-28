@@ -4,7 +4,9 @@
 import { partId, type Kind, type Piece } from './parts';
 import { BLACK, COLOR_BY_ID } from './palette';
 
-export interface Cell { c: number; vis: boolean }
+/** g: a group the cell belongs to (1 = the glasses, 2 = the head): one piece never takes cells of two
+ * groups, so the head and the glasses are their own pieces */
+export interface Cell { c: number; vis: boolean; g?: number }
 export type Layer = Map<number, Cell>;
 
 export const key = (x: number, z: number) => (x + 512) * 1024 + (z + 512);
@@ -33,10 +35,11 @@ export function tileLayer(cells: Layer, o: TileOpts): Piece[] {
 
   /** colour of a candidate rectangle, or null if it can't be one piece */
   function rectColor(X: number, Z: number, w: number, d: number): number | null {
-    let vis = -1, trans = false;
+    let vis = -1, trans = false, group = -1;
     for (let i = 0; i < w; i++) for (let j = 0; j < d; j++) {
       const k = key(X + i, Z + j), cell = cells.get(k);
       if (!cell || used.has(k)) return null;
+      if (group < 0) group = cell.g ?? 0; else if ((cell.g ?? 0) !== group) return null;
       if (isTrans(cell.c)) trans = true;
       if (cell.vis || isTrans(cell.c)) { if (vis < 0) vis = cell.c; else if (vis !== cell.c) return null; }
     }
@@ -55,7 +58,8 @@ export function tileLayer(cells: Layer, o: TileOpts): Piece[] {
   };
   function add(X: number, Z: number, w: number, d: number, c: number) {
     for (let i = 0; i < w; i++) for (let j = 0; j < d; j++) used.add(key(X + i, Z + j));
-    out.push({ x: X, z: Z, y: o.y, h: o.h, w, d, c, kind: o.kind, part: partId(o.kind, w, d), group: o.group });
+    const g = cells.get(key(X, Z))?.g;
+    out.push({ x: X, z: Z, y: o.y, h: o.h, w, d, c, kind: o.kind, part: partId(o.kind, w, d), group: o.group, ...(g === 1 ? { glasses: true } : g === 2 ? { head: true } : {}) });
   }
   const orients = (a: number, b: number): [number, number][] => (a === b ? [[a, b]] : [[b, a], [a, b]]);
 

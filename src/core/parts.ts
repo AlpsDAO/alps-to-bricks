@@ -15,6 +15,8 @@ export interface Piece {
   dir?: 'N' | 'S' | 'E' | 'W';   // curved slope: which side goes down (N = front)
   group?: 'base' | 'body' | 'top';
   support?: boolean;       // added only to hold something up
+  glasses?: boolean;       // part of the glasses, which are their own pieces
+  head?: boolean;          // part of the head, likewise
   nameplate?: boolean;
 }
 

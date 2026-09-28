@@ -89,9 +89,42 @@ export function analyze(g: PunkGrid): Analysis {
   const depthFrom = new Map<string, [number, number]>();
   const stalk = new Map<string, number>();   // sideways bridge pixel -> colour
   const bridgedInto = new Map<string, number>();   // the attached pixel a bridge reaches into -> its colour
-  const detached = comps.map((l, i) => ({ l, i })).filter(o => o.i !== main)
+  // a head stands alone: bits of the head that join it only through the body (bigfoot's arms) are loose
+  // details of the head, held from the head itself. Under its glasses the head carries on, so it joins
+  // up there.
+  const headLoose: [number, number][][] = [];
+  if (g.parts) {
+    const headish = (r: number, c: number) => inside(r, c) && attached[r][c] && (g.parts![r][c] === PART.head || (g.parts![r][c] === PART.glasses && (g.under?.[r]?.[c] ?? -1) >= 0));
+    const seen: boolean[][] = Array.from({ length: N }, () => Array(N).fill(false));
+    const groups: [number, number][][] = [];
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+      if (!headish(r, c) || seen[r][c]) continue;
+      const list: [number, number][] = [[r, c]]; seen[r][c] = true;
+      for (let i = 0; i < list.length; i++) for (const [dr, dc] of D4) {
+        const rr = list[i][0] + dr, cc = list[i][1] + dc;
+        if (headish(rr, cc) && !seen[rr][cc]) { seen[rr][cc] = true; list.push([rr, cc]); }
+      }
+      groups.push(list);
+    }
+    const core = groups.reduce((a, b) => (b.length > a.length ? b : a), [] as [number, number][]);
+    for (const gr of groups) {
+      if (gr === core) continue;
+      const loose = gr.filter(([r, c]) => g.parts![r][c] === PART.head);
+      if (!loose.length) continue;
+      for (const [r, c] of loose) attached[r][c] = false;
+      headLoose.push(loose);
+    }
+  }
+  const detached = [...comps.map((l, i) => ({ l, i })).filter(o => o.i !== main), ...headLoose.map((l, i) => ({ l, i: -1 - i }))]
     .sort((a, b) => Math.max(...b.l.map(p => p[0])) - Math.max(...a.l.map(p => p[0])));   // lowest first
   for (const { l } of detached) {
+    const headSide = g.parts?.[l[0][0]]?.[l[0][1]] === PART.head;
+    const sameSide = (r: number, c: number) => {
+      const p = g.parts?.[r]?.[c];
+      if (p === undefined) return true;
+      if (p === PART.glasses) return false;
+      return support[r][c] || stalk.has(`${r},${c}`) || (p === PART.head) === headSide;
+    };
     // cheapest path through empty pixels to the attached part: down is cheap, up is dear
     const cost = Array.from({ length: N }, () => Array(N).fill(Infinity));
     const prev = new Map<string, [number, number] | null>();
@@ -102,11 +135,14 @@ export function analyze(g: PunkGrid): Analysis {
       q.sort((a, b) => a[0] - b[0]);
       const [d, r, c] = q.shift()!;
       if (d > cost[r][c]) continue;
-      if (attached[r][c]) { hit = [r, c]; break; }
+      // a loose detail hangs from its own part: the head's from the head, the body's from the body, never
+      // from the glasses (heads and glasses are their own pieces)
+      if (attached[r][c] && sameSide(r, c)) { hit = [r, c]; break; }
       for (const [dr, dc] of D4) {
         const rr = r + dr, cc = c + dc;
         if (!inside(rr, cc)) continue;
         if (sil(rr, cc) && !attached[rr][cc] && !l.some(p => p[0] === rr && p[1] === cc)) continue;
+        if (attached[rr][cc] && !sameSide(rr, cc) && !l.some(p => p[0] === rr && p[1] === cc)) continue;
         // an earlier support or bridge only holds things from above or below, never beside it
         if (dr === 0 && (support[rr][cc] || stalk.has(`${rr},${cc}`))) continue;
         const nd = d + (dr === 1 ? 1 : dr === -1 ? 2 : 3);
@@ -147,14 +183,17 @@ export function analyze(g: PunkGrid): Analysis {
     return false;
   };
 
-  // ---- skin: the head's main colour, which shows on its sides and back ----
+  // ---- skin: the head's main colour, which shows on its sides and back: counted over the head's own
+  // pixels (under its glasses too, never the glasses themselves), black included (a black bomb is
+  // black all round). Without trait info (a Punk), the face's colour, outlines left out ----
   const tally = new Map<number, number>();
-  for (let r = 0; r < BODY_TOP; r++) for (let c = 0; c < N; c++) {
-    if (!attached[r][c]) continue;
-    const k = col(r, c);
-    if (k < 0 || k === BLACK || COLOR_BY_ID.get(k)?.trans) continue;
-    tally.set(k, (tally.get(k) ?? 0) + 1);
-  }
+  const count = (k: number) => { if (k >= 0 && !COLOR_BY_ID.get(k)?.trans) tally.set(k, (tally.get(k) ?? 0) + 1); };
+  if (g.parts) {
+    for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+      if (g.parts[r][c] === PART.head) count(col(r, c));
+      else if ((g.under?.[r]?.[c] ?? -1) >= 0) count(brickOf[g.under![r][c]]);
+    }
+  } else for (let r = 0; r < BODY_TOP; r++) for (let c = 0; c < N; c++) if (attached[r][c] && col(r, c) !== BLACK) count(col(r, c));
   const skin = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? brickOf[0];
   // the body's own colour (under any accessory), for the back of the torso
   const partOf = (r: number, c: number) => g.parts?.[r]?.[c] ?? -1;
@@ -257,6 +296,8 @@ export function analyze(g: PunkGrid): Analysis {
       while (r - fromTop - 1 >= 0 && solid(r - fromTop - 1, c)) fromTop++;
       const isBody = body(r, c);
       // thin bits of the glasses stay on the front, so the A logo and frames read flat
+      // thin bits of a head are slabs, or rods one pixel deep where the head's style says so (strings,
+      // wicks, stems: the bomb's fuse, the barrel's stream)
       const anchor = isBody ? 'center' : part === PART.glasses ? 'front' : part === PART.head && g.style?.rods ? 'rod' : 'center';
       row.push({ color: col(r, c), role: isBody ? 'body' : 'protrusion', anchor, fromTop, fill, fillBack, depthFrom: depthFrom.get(`${r},${c}`), part, edge: edge[r][c] || 1 });
     }

@@ -62,7 +62,8 @@
       "shape": "round"
     },
     "bomb": {
-      "shape": "round"
+      "shape": "round",
+      "rods": true
     },
     "bonsai": {
       "shape": "round"

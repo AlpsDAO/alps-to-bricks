@@ -174,6 +174,12 @@ function renderChecks(m: Model, ms: number) {
     c.floating === 0 ? li('ok', '0 floating', 'every piece is attached to the base') : li('bad', `${c.floating} floating`, 'pieces not attached to the base: this model can’t be built as is'),
     c.com.inside ? li('ok', 'Balanced', `centre of mass ${c.com.margin} studs inside the base`) : li('bad', 'Will tip over', 'the centre of mass is outside the base'),
     c.weak === 0 ? li('ok', '0 weak joints', 'no piece hangs on a single stud') : li('warn', `${c.weak} weak joint${c.weak > 1 ? 's' : ''}`, 'held by a single stud: fine for display, handle gently'),
+    ...(c.head ? [c.head.parts === 1
+      ? li('ok', 'Head in one piece', `its ${c.head.pieces} pieces hold together on their own`)
+      : li('warn', `Head in ${c.head.parts} parts`, `its ${c.head.pieces} pieces only hold together with the body`)] : []),
+    ...(c.glasses ? [c.glasses.parts === 1
+      ? li('ok', 'Glasses in one piece', `their ${c.glasses.pieces} pieces hold together on their own, like real glasses`)
+      : li('warn', `Glasses in ${c.glasses.parts} parts`, `their ${c.glasses.pieces} pieces only hold together with the head`)] : []),
   ].join('');
   $('notes').innerHTML = [...m.notes, `Computed in your browser${ms ? ` in ${(ms / 1000).toFixed(1)} s` : ''}. Computer-checked, not physically build-tested.`].map(n => `<li>${n}</li>`).join('');
   // the key figures, big; the rest folds under "More info"

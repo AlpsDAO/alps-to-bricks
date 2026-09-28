@@ -19,7 +19,7 @@ export interface HeadFile {
   slices: string[][];
 }
 
-export const MAX_SLICES = 24;
+export const MAX_SLICES = 32;
 const SIZE = 32;
 const EMPTY = new Set(['.', ' ']);
 

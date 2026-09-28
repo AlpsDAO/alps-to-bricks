@@ -41,17 +41,23 @@ for (const p of problems) console.log(`  ⚠ ${p}`);
 
 writeFileSync(`${dir}/model.png`, renderViews(modelVoxels(model), [32, Math.max(8, depth), 32]));
 let failing = 0;
+const apart = { head: 0, glasses: 0 };
 for (const size of ['mini', 'xl'] as const) {
   const rows: string[] = [];
   testSeeds(index).forEach((seed, i) => {
     const m = buildModel({ ...alpGrid(seed), headModel: model }, size), c = m.checks;
     const ok = c.floating === 0 && c.collisions === 0 && c.com.inside;
     if (!ok) failing++;
-    rows.push(`${ok ? '✓' : '✗'} ${c.pieces} pieces${ok ? '' : ` · ${c.floating} floating, ${c.collisions} collisions${c.com.inside ? '' : ', tips over'}`} · ${seedLink(seed)}`);
+    if (c.head && c.head.parts > 1) apart.head++;
+    if (c.glasses && c.glasses.parts > 1) apart.glasses++;
+    const alone = `head ${c.head?.parts === 1 ? 'in one piece' : `in ${c.head?.parts ?? 0} parts`}, glasses ${c.glasses?.parts === 1 ? 'in one piece' : `in ${c.glasses?.parts ?? 0} parts`}`;
+    rows.push(`${ok ? '✓' : '✗'} ${c.pieces} pieces, ${alone}${ok ? '' : ` · ${c.floating} floating, ${c.collisions} collisions${c.com.inside ? '' : ', tips over'}`} · ${seedLink(seed)}`);
     if (i === 0) { const { voxels, dims } = brickVoxels(m); writeFileSync(`${dir}/${size}.png`, renderViews(voxels, dims, { cell: size === 'xl' ? 3 : 5, iso: size === 'xl' ? 4 : 7, zScale: 0.4 })); }
   });
   console.log(`  ${size}:`); rows.forEach(r => console.log(`    ${r}`));
 }
 console.log(`  drawings: ${dir}/model.png, ${dir}/mini.png, ${dir}/xl.png`);
+if (apart.head) console.log(`  ⚠ the head doesn't hold together on its own in ${apart.head} of 24 builds: give its details a solid core to hang from`);
+if (apart.glasses) console.log(`  (the glasses come apart on their own in ${apart.glasses} builds: that's the builder's side, not the head's)`);
 if (problems.length || failing) { console.log(`✗ ${problems.length} problem${problems.length === 1 ? '' : 's'}, ${failing} build${failing === 1 ? '' : 's'} not holding together`); process.exit(1); }
 console.log('✓ good to go');

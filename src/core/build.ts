@@ -82,7 +82,7 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
   const { sx, D } = S;
 
   // ---------- 1. pixels -> stud cells, one map per pixel row ----------
-  const { rows, rTop, rBot, rowCells, supportCell } = voxelize(grid, A, S);
+  const { rows, rTop, rBot, rowCells, supportCell, glassesCells, headGroup } = voxelize(grid, A, S);
 
   // ---------- 2. long overhangs get a clear support column ----------
   let columns = 0;
@@ -158,7 +158,7 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
       const x = kx(k), z = kz(k);
       const vis = !!COLOR_BY_ID.get(c)?.trans
         || [key(x + 1, z), key(x - 1, z), key(x, z + 1), key(x, z - 1)].some(n => !opaque(r, n));
-      out.set(k, { c, vis });
+      out.set(k, { c, vis, ...(glassesCells.get(r)?.has(k) ? { g: 1 } : headGroup.get(r)?.has(k) ? { g: 2 } : {}) });
     }
     return out;
   };
@@ -185,15 +185,16 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
     return rowCellsCache.get(r)!;
   };
   /** the brick a stud cell can take across plate levels y..y+2, or null if it needs plates there */
-  const brickCell = (y: number, k: number): { c: number; vis: boolean } | null => {
+  const brickCell = (y: number, k: number): { c: number; vis: boolean; g?: number } | null => {
     let seen = -1, any = -1;
+    const g = levelCells(y).get(k)?.g;
     for (let i = 0; i < 3; i++) {
       const cell = levelCells(y + i).get(k);
-      if (!cell) return null;
+      if (!cell || cell.g !== g) return null;
       any = cell.c;
       if (cell.vis || COLOR_BY_ID.get(cell.c)?.trans) { if (seen >= 0 && seen !== cell.c) return null; seen = cell.c; }
     }
-    return { c: seen >= 0 ? seen : any, vis: seen >= 0 };
+    return { c: seen >= 0 ? seen : any, vis: seen >= 0, ...(g ? { g } : {}) };
   };
   // Where to start each brick level: going up, either lay a brick level here (3 plates tall) or a single
   // plate level. Chosen for the fewest pieces overall, counting layer cells, with plates squeezed in
@@ -352,6 +353,21 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
   }));
 
   const checks = checkModel(pieces);
+  // the head and the glasses on their own: do their pieces hold together, each as one thing?
+  const alone = (ps: Piece[]) => {
+    const { adj } = connections(ps), seen = new Set<number>();
+    let parts = 0;
+    for (let i = 0; i < ps.length; i++) {
+      if (seen.has(i)) continue;
+      parts++;
+      const q = [i]; seen.add(i);
+      while (q.length) for (const j of adj[q.pop()!].keys()) if (!seen.has(j)) { seen.add(j); q.push(j); }
+    }
+    return { pieces: ps.length, parts };
+  };
+  const frame = pieces.filter(p => p.glasses), head = pieces.filter(p => p.head);
+  if (frame.length) checks.glasses = alone(frame);
+  if (head.length) checks.head = alone(head);
   if (checks.floating) notes.push(`${checks.floating} piece${checks.floating > 1 ? 's are' : ' is'} not connected to the base.`);
   const bomMap = new Map<string, BomLine>();
   for (const p of pieces) {
@@ -454,46 +470,74 @@ function voxelize(grid: PunkGrid, A: Analysis, S: SizeSpec) {
     const own = new Set<number>();
     for (const k of cells.keys()) {
       const p = A.px[r]?.[Math.floor(kx(k) / sx)];
-      if (p && !p.depthFrom && (p.part === PART.glasses || (p.part === PART.head && p.role === 'body'))) own.add(k);
+      if (p && !p.depthFrom && (p.part === PART.glasses || p.part === PART.head)) own.add(k);
     }
     headCells.set(r, own);
   }
-  flattenGlasses(A, rowCells, headCells, sx);
-  if (A.glasses) wearGlasses(A.glasses, rowCells, headCells, sx, D);
+  const glassesCells = placeGlasses(A, rowCells, headCells, sx, grid.headModel ? undefined : grid.under);
+  if (A.glasses) wearGlasses(A.glasses, rowCells, headCells, sx, D, glassesCells);
+  // the head is its own pieces too (so it stands alone, resting on the body): its cells, its loose
+  // details, and the supports and bridges holding them
+  const headGroup = new Map<number, Set<number>>();
+  for (const [r, cells] of rowCells) {
+    const mine = new Set<number>(grid.headModel ? headCells.get(r) ?? [] : []);
+    for (const k of cells.keys()) {
+      const p = A.px[r]?.[Math.floor(kx(k) / sx)];
+      if (!p || glassesCells.get(r)?.has(k)) continue;
+      const holder = p.depthFrom ? A.px[p.depthFrom[0]][p.depthFrom[1]] : null;
+      // the head behind its glasses is the head too (the frame itself was skipped above)
+      if (p.part === PART.head || p.part === PART.glasses || ((p.role === 'support' || p.role === 'stalk') && holder?.part === PART.head)) mine.add(k);
+    }
+    headGroup.set(r, mine);
+  }
 
-  return { rows, rTop, rBot, rowCells, supportCell };
+  return { rows, rTop, rBot, rowCells, supportCell, glassesCells, headGroup };
 }
 
-/** The glasses sit flat across the front, whatever shape the head is: on one plane, level with the head's
- * most forward point behind them, with the frame filling back to wherever the head's surface is (the
- * sides of a barrel curve away behind them). */
-function flattenGlasses(A: Analysis, rowCells: Map<number, Map<number, number>>, headCells: Map<number, Set<number>>, sx: number) {
+/** The glasses are their own thing, like real glasses (or goggles) on the character: one flat frame,
+ * level with the head's most forward point behind them, two voxels deep (the front is the pixel art, the
+ * back is the frame's colour, as real goggles have a body), made of their own pieces (never shared with
+ * the head) so they hold together on their own. Nothing fills in behind them: behind the frame the head
+ * carries on in its own colours, and where the head curves away (a barrel's sides) there's a gap. */
+function placeGlasses(A: Analysis, rowCells: Map<number, Map<number, number>>, headCells: Map<number, Set<number>>, sx: number, under?: number[][]): Map<number, Set<number>> {
+  const out = new Map<number, Set<number>>();
   const glasses: [number, number][] = [];
   for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) { const p = A.px[r][c]; if (p && !p.depthFrom && p.part === PART.glasses) glasses.push([r, c]); }
-  if (!glasses.length) return;
-  const frontOf = (r: number, c: number) => {
-    let z = Infinity;
-    for (const k of rowCells.get(r)?.keys() ?? []) if (Math.floor(kx(k) / sx) === c) z = Math.min(z, kz(k));
-    return z;
-  };
-  const fronts = glasses.map(([r, c]) => frontOf(r, c)).filter(Number.isFinite);
-  if (!fronts.length) return;
-  const plane = Math.min(...fronts);
-  glasses.forEach(([r, c]) => {
-    const cells = rowCells.get(r)!, own = headCells.get(r) ?? new Set<number>();
-    const back = frontOf(r, c), colour = A.px[r][c]!.color;
-    for (let z = plane; z < (Number.isFinite(back) ? back : plane + 1); z++) for (let i = 0; i < sx; i++) {
-      const k = key(c * sx + i, z);
-      cells.set(k, colour); own.add(k);
+  if (!glasses.length) return out;
+  const zsOf = (r: number, c: number) => [...(rowCells.get(r)?.keys() ?? [])].filter(k => Math.floor(kx(k) / sx) === c).map(kz);
+  const fronts = glasses.map(([r, c]) => {
+    const p = A.px[r][c]!;
+    const zs = p.role === 'body' ? zsOf(r, c) : [];
+    return zs.length ? Math.min(...zs) : Infinity;
+  }).filter(Number.isFinite);
+  const plane = fronts.length ? Math.min(...fronts) : 0;
+  // the frame's own colour: the glasses' commonest
+  const tally = new Map<number, number>();
+  for (const [r, c] of glasses) tally.set(A.px[r][c]!.color, (tally.get(A.px[r][c]!.color) ?? 0) + 1);
+  const frameColour = [...tally].sort((a, b) => b[1] - a[1])[0][0];
+  for (const [r, c] of glasses) {
+    const p = A.px[r][c]!, cells = rowCells.get(r)!, own = headCells.get(r) ?? new Set<number>();
+    for (const k of [...cells.keys()]) {
+      if (Math.floor(kx(k) / sx) !== c) continue;
+      // thin bits of glasses reaching past the head (the clip beside a narrow head) have nothing behind
+      // them: just the frame. Wherever the art has head under the glasses, the head carries on behind.
+      if (p.role !== 'body' && (under?.[r]?.[c] ?? -1) < 0) { cells.delete(k); own.delete(k); continue; }
+      if (cells.get(k) === p.color) cells.set(k, p.fill);   // the head under the glasses, in its own colour
     }
-    headCells.set(r, own);
-  });
+    const mine = out.get(r) ?? new Set<number>();
+    for (let z = plane; z < plane + 2 * sx; z++) for (let i = 0; i < sx; i++) {
+      const k = key(c * sx + i, z);
+      cells.set(k, z < plane + sx ? p.color : frameColour); mine.add(k); own.add(k);
+    }
+    out.set(r, mine); headCells.set(r, own);
+  }
+  return out;
 }
 
 /** Whatever glasses the Alp wears, round whatever head it has: the strap (or arms) runs round the head's
  * surface right behind the front, the strap's clip shows its A on both sides, and gnargles' arms hook
  * down behind the ears. Only the head's surface is painted, never its front: that's the pixel art. */
-function wearGlasses(G: NonNullable<Analysis['glasses']>, rowCells: Map<number, Map<number, number>>, headCells: Map<number, Set<number>>, sx: number, D: number) {
+function wearGlasses(G: NonNullable<Analysis['glasses']>, rowCells: Map<number, Map<number, number>>, headCells: Map<number, Set<number>>, sx: number, D: number, frame: Map<number, Set<number>>) {
   const zGlyph = Math.max(1, sx), ears = Math.floor(D / 2) - 1;
   const surface = (r: number, pick: (x: number, z: number, behind: number, side: boolean) => number | null) => {
     const cells = rowCells.get(r), own = headCells.get(r);
@@ -503,13 +547,23 @@ function wearGlasses(G: NonNullable<Analysis['glasses']>, rowCells: Map<number, 
     const rowFront = Math.min(...front.values());
     for (const k of own) {
       const x = kx(k), z = kz(k);
-      if (z === front.get(x)) continue;
+      if (z === front.get(x) || frame.get(r)?.has(k)) continue;   // never the front, nor the frame itself
       const side = !cells.has(key(x - 1, z)) || !cells.has(key(x + 1, z));
       if (!side && cells.has(key(x, z + 1))) continue;   // inside: nobody sees it
       const colour = pick(x, z, z - rowFront, side);
       if (colour !== null) cells.set(k, colour);
     }
   };
+  // the strap (or arm) comes straight out of the frame's ends: where the head reaches past the frame on
+  // either side, it covers the head's front there too, so it meets the frame and runs on round the head
+  for (const r of G.rows) {
+    const cells = rowCells.get(r), own = headCells.get(r), xs = [...(frame.get(r) ?? [])].map(kx);
+    if (!cells || !own || !xs.length) continue;
+    const lo = Math.min(...xs), hi = Math.max(...xs);
+    const front = new Map<number, number>();
+    for (const k of own) if (!frame.get(r)!.has(k) && (kx(k) < lo || kx(k) > hi)) front.set(kx(k), Math.min(front.get(kx(k)) ?? Infinity, kz(k)));
+    for (const [x, z] of front) cells.set(key(x, z), G.color);
+  }
   for (const r of G.rows) surface(r, (_x, _z, behind, side) => {
     if (G.kind === 'arms' && behind > ears) return null;
     const j = Math.floor((behind - zGlyph) / sx);
@@ -555,7 +609,8 @@ function useHeadModel(m: HeadModel, A: Analysis, rowCells: Map<number, Map<numbe
     if (!cells) rowCells.set(r, cells = new Map());
     const own = headCells.get(r) ?? new Set<number>();
     list.forEach((v, i) => {
-      const colour = i === 0 && A.px[r][c] ? A.px[r][c]!.color : v.colour;
+      const p = A.px[r][c];
+      const colour = i === 0 && p && p.part !== PART.glasses ? p.color : v.colour;
       for (let z = v.y * sx; z < (v.y + 1) * sx; z++) for (let i2 = 0; i2 < sx; i2++) { const k = key(c * sx + i2, z); cells!.set(k, colour); own.add(k); }
     });
     headCells.set(r, own);
@@ -646,7 +701,7 @@ function repair(layers: LayerRec[], notes: string[], groupOf: (L: LayerRec) => P
         if (!pair) return null;
         const [own, n] = pair, cells = L.cells;
         L.cells = new Map(cells);
-        L.cells.set(n, { c: cells.get(own)!.c, vis: cells.get(n)!.vis });
+        L.cells.set(n, { ...cells.get(n)!, c: cells.get(own)!.c });
         const undo = retile(L, [own], L.y > bottomY ? groundedCells(under(L.y)) : new Set());
         return () => { undo(); L.cells = cells; };
       },

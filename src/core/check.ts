@@ -11,6 +11,10 @@ export interface Checks {
   collisions: number;       // overlapping unit cells
   weak: number;             // pieces held by a single stud
   com: { x: number; z: number; inside: boolean; margin: number };
+  /** the glasses' own pieces: how many, and in how many separate parts (1 = they hold together alone) */
+  glasses?: { pieces: number; parts: number };
+  /** the head's own pieces, the same way */
+  head?: { pieces: number; parts: number };
 }
 
 const fpKey = (x: number, z: number) => (x + 512) * 1024 + (z + 512);
