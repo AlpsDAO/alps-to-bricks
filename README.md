@@ -59,4 +59,4 @@ Adapted from [Punk to Bricks](https://github.com/hs7j4yk4sz-boop/punk-to-bricks)
 
 [MIT](LICENSE). See also the [disclaimer](DISCLAIMER.md). Alps artwork is in the public domain.
 
-The [interactive head workshop](./head-workshop.html) is included in production builds: inspect all 248 sculptures, fit any of the 200 glasses, compare source artwork and Mini/XL assemblies, and download editable head JSON.
+The [interactive head workshop](./head-workshop.html) is included in production builds: inspect all 248 sculptures, fit any of the 200 glasses, compare source artwork and Mini/XL assemblies, and download editable head JSON. The workshop now includes a review queue with per head/eyewear decisions, pinned areas, notes and tags, a 32×32 depth-slice painter, 3D head and eyewear block editing, undo/redo, local autosave, and a portable review JSON export/import. Eyewear corrections are stored per head and style and rendered in both Mini and XL builds. Edited heads export as valid recipe JSON; upload an exported review to integrate edits and feedback into the repository.

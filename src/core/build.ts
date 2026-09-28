@@ -1,6 +1,6 @@
 // Punk grid -> buildable brick model (Mini or XL).
 import { analyze, N, type Analysis, type PixelInfo } from './analyze';
-import { fitEyewear } from './eyewear';
+import { fitEyewear, applyEyewearEdits } from './eyewear';
 import { hexToRgb, type RGB } from './color';
 import type { VoxModel } from '../alps/vox';
 import { checkModel, connections, grounded, type Checks } from './check';
@@ -396,8 +396,8 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
 /** Pixels → stud cells, one map per pixel row (cell → brick colour), with clear supports marked. */
 function voxelize(grid: PunkGrid, A: Analysis, S: SizeSpec) {
   const { sx, D } = S;
-  const rows = [...Array(N).keys()].filter(r => A.px[r].some(Boolean));
-  const rTop = rows[0], rBot = rows[rows.length - 1];
+  let rows = [...Array(N).keys()].filter(r => A.px[r].some(Boolean));
+  let rTop = rows[0], rBot = rows[rows.length - 1];
   const range = new Map<string, [number, number]>();
   // a flat head reaches the middle of the depth, where the supports and bridges holding details sit
   const headShape = grid.style?.head ?? 'round', flatBack = Math.floor(D / 2);
@@ -488,6 +488,13 @@ function voxelize(grid: PunkGrid, A: Analysis, S: SizeSpec) {
     ? fitEyewear(A, rowCells, headCells, sx)
     : placeGlasses(A, rowCells, headCells, sx, grid.under);
   if (A.glasses && !grid.headModel) wearGlasses(A.glasses, rowCells, headCells, sx, D, glassesCells);
+  applyEyewearEdits(grid.eyewearEdits, rowCells, headCells, glassesCells, sx);
+  if (grid.eyewearEdits?.length) {
+    const occupied = [...rowCells].filter(([, cells]) => cells.size).map(([r]) => r);
+    rTop = Math.min(...occupied); rBot = Math.max(...occupied);
+    rows = Array.from({ length: rBot - rTop + 1 }, (_, i) => rTop + i);
+    for (const r of rows) if (!rowCells.has(r)) rowCells.set(r, new Map());
+  }
   // the head is its own pieces too (so it stands alone, resting on the body): its cells, its loose
   // details, and the supports and bridges holding them
   const headGroup = new Map<number, Set<number>>();

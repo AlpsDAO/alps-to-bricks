@@ -20,7 +20,11 @@ export interface PunkGrid {
   style?: GridStyle;
   /** a hand-made head, replacing the automatic one (see src/alps/vox.ts) */
   headModel?: HeadModel;
+  /** Per head and eyewear corrections to fitted frame cells, in Mini stud coordinates. */
+  eyewearEdits?: EyewearEdit[];
 }
+
+export interface EyewearEdit { row: number; x: number; depth: number; color: number | null }
 
 /** Voxels of a hand-made head: x = column, y = depth from the front, z = height from the bottom row.
  * front: how many voxels the head's front sits ahead of the torso's front (0 = flush). */

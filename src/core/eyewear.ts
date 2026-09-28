@@ -2,10 +2,22 @@
  * small contact regions. Straps/arms follow the actual head depth outside its surface. */
 import type { Analysis } from './analyze';
 import { PART } from './detect';
+import type { EyewearEdit } from './detect';
 import { key, kx, kz } from './tile';
 
 type Rows = Map<number, Map<number, number>>;
 type Owned = Map<number, Set<number>>;
+export function applyEyewearEdits(edits: EyewearEdit[] | undefined, rows: Rows, head: Owned, frame: Owned, sx: number): void {
+  for (const edit of edits ?? []) {
+    if (!Number.isInteger(edit.row) || edit.row < 0 || edit.row > 31 || !Number.isInteger(edit.x) || !Number.isInteger(edit.depth) || Math.abs(edit.depth) > 64 || edit.x < 0 || edit.x > 31) continue;
+    for (let dx = 0; dx < sx; dx++) for (let dz = 0; dz < sx; dz++) {
+      const k = key(edit.x * sx + dx, edit.depth * sx + dz), cells = rows.get(edit.row) ?? new Map<number,number>(), own = frame.get(edit.row) ?? new Set<number>();
+      if (edit.color === null) { if (own.delete(k)) cells.delete(k); }
+      else if (!head.get(edit.row)?.has(k)) { cells.set(k, edit.color); own.add(k); }
+      rows.set(edit.row, cells); frame.set(edit.row, own);
+    }
+  }
+}
 export function fitEyewear(A: Analysis, rows: Rows, head: Owned, sx: number): Owned {
   const frame: Owned = new Map();
   const pixels: [number,number][]=[];
