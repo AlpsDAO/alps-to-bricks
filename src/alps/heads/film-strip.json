@@ -1,0 +1,41 @@
+{
+  "head": "film-strip",
+  "about": "One-voxel film ribbon, preserving sprocket holes and transparent-looking frames.",
+  "palette": {"a":"#2b2834","b":"#0079fc","c":"#027ee6"},
+  "slices": [
+    [
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      "......aa.aa.aa.aa.aa.aa.aa......",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      ".....bbabbbbbbbbbbbbbbbbabb.....",
+      ".....bbabbbbbbbbbbbbbbbbabb.....",
+      ".....bbabbbbbbbbbbbbbbbbabb.....",
+      ".....bbabbbbbbbbbbbbbbbbabb.....",
+      ".....bcabbbbbbbbbbbbbbbbabb.....",
+      ".....bbabbbbbbbbbbbbbbbbabb.....",
+      ".....bbabbbbbbbbbbbbbbbbabb.....",
+      ".....bbabbbbbbbbbbbbbbbbabb.....",
+      ".....bbabbbbbbbbbbbbbbbbabb.....",
+      ".....bbabbbbbbbbbbbbbbbbabb.....",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      "......aa.aa.aa.aa.aa.aa.aa......",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................"
+    ]
+  ]
+}

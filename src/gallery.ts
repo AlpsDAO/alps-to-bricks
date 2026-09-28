@@ -1,3 +1,4 @@
+import { withHeadModel } from './alps/heads';
 // Trait review: every head, pair of glasses, body and accessory tried on one plain Alp, built as a Mini
 // bust and shown from three sides, so the 3D of each trait can be checked, marked and fixed in batches.
 // Models are built in workers and drawn by one shared WebGL renderer, only as their tiles scroll into
@@ -173,14 +174,19 @@ function nearest(): Tile {
   return best!;
 }
 
+let loadingHeads = 0;
 function pump() {
   // builds stay a few steps ahead of the renderer, no more, so a quick scroll doesn't queue up tiles long gone
-  while (pending.size && pool.load < pool.size && toRender.length < 4 && !renderFailed) {
+  while (pending.size && pool.load + loadingHeads < pool.size && toRender.length < 4 && !renderFailed) {
     const t = nearest();
     pending.delete(t);
     t.state = 'building';
     setStatsText(t, 'Building…');
-    pool.build({ size: 'mini', grid: alpGrid(t.seed) }).then(r => {
+    loadingHeads++;
+    withHeadModel(alpGrid(t.seed), t.seed).then(grid => {
+      loadingHeads--;
+      return pool.build({ size: 'mini', grid });
+    }).then(r => {
       if (r.ok) { toRender.push({ t, model: r.model, ms: r.ms }); scheduleRender(); }
       else { t.state = 'error'; setStatsText(t, r.message, true); }
       pump();

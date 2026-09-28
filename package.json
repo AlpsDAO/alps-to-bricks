@@ -5,14 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node --import tsx scripts/heads/review.ts dist/head-workshop.html",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "heads:generate": "node --import tsx scripts/heads/generate.ts",
+    "heads:review": "node --import tsx scripts/heads/review.ts",
+    "heads:render": "node --import tsx scripts/heads/render-catalog.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
     "@types/pngjs": "^6.0.5",
     "@types/three": "^0.186.0",
+    "esbuild": "0.28.2",
     "jpeg-js": "^0.4.4",
     "playwright-core": "^1.63.0",
     "pngjs": "^7.0.0",

@@ -1,5 +1,6 @@
 // Punk grid -> buildable brick model (Mini or XL).
 import { analyze, N, type Analysis, type PixelInfo } from './analyze';
+import { fitEyewear } from './eyewear';
 import { hexToRgb, type RGB } from './color';
 import type { VoxModel } from '../alps/vox';
 import { checkModel, connections, grounded, type Checks } from './check';
@@ -127,6 +128,15 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
     const need = 2 * sx;
     if (cx - bx0 < need) bx0 = Math.floor(cx - need); if (bx1 + 1 - cx < need) bx1 = Math.ceil(cx + need);
     if (cz - bz0 < need) bz0 = Math.floor(cz - need); if (bz1 + 1 - cz < need) bz1 = Math.ceil(cz + need);
+  }
+  // Authored shapes and externally fitted eyewear can extend beyond the old 8-deep
+  // torso footprint. Every potential support needs a stud on the plinth beneath it.
+  if (grid.headModel) {
+    const footprint = [...rowCells.values()].flatMap(cells => [...cells.keys()]);
+    bx0 = Math.min(bx0, ...footprint.map(kx)) - sx;
+    bx1 = Math.max(bx1, ...footprint.map(kx)) + sx;
+    bz0 = Math.min(bz0, ...footprint.map(kz)) - sx;
+    bz1 = Math.max(bz1, ...footprint.map(kz)) + sx;
   }
   const baseCells = new Set<number>();
   for (let x = bx0; x <= bx1; x++) for (let z = bz0; z <= bz1; z++) baseCells.add(key(x, z));
@@ -306,7 +316,7 @@ export function buildModel(grid: PunkGrid, size: SizeId, overrides: Partial<Size
     const above = layers.filter(M => M.y === top);
     const inside = top >= 0 && top < H ? hollow.get(levelRow[top]) ?? new Set<number>() : new Set<number>();
     const exposed: Layer = new Map();
-    for (const [k, cell] of L.cells) if (!inside.has(k) && !above.some(M => M.cells.has(k) || occ.get(M)!.has(k))) exposed.set(k, { c: cell.c, vis: true });
+    for (const [k, cell] of L.cells) if (!inside.has(k) && !above.some(M => M.cells.has(k) || occ.get(M)!.has(k))) exposed.set(k, { c: cell.c, vis: true, g: cell.g });
     if (!exposed.size) return;
     if (L.row === null && S.nameplate && top === 0) {
       const [w, d] = S.nameplate, cx0 = Math.round((Math.min(...bottom.map(kx)) + Math.max(...bottom.map(kx)) + 1 - w) / 2);
@@ -474,8 +484,10 @@ function voxelize(grid: PunkGrid, A: Analysis, S: SizeSpec) {
     }
     headCells.set(r, own);
   }
-  const glassesCells = placeGlasses(A, rowCells, headCells, sx, grid.headModel ? undefined : grid.under);
-  if (A.glasses) wearGlasses(A.glasses, rowCells, headCells, sx, D, glassesCells);
+  const glassesCells = grid.headModel
+    ? fitEyewear(A, rowCells, headCells, sx)
+    : placeGlasses(A, rowCells, headCells, sx, grid.under);
+  if (A.glasses && !grid.headModel) wearGlasses(A.glasses, rowCells, headCells, sx, D, glassesCells);
   // the head is its own pieces too (so it stands alone, resting on the body): its cells, its loose
   // details, and the supports and bridges holding them
   const headGroup = new Map<number, Set<number>>();
@@ -599,7 +611,7 @@ function useHeadModel(m: HeadModel, A: Analysis, rowCells: Map<number, Map<numbe
   for (let r = 0; r < N; r++) {
     const ys = [...vox.entries()].filter(([k]) => +k.split(',')[0] === r).flatMap(([, l]) => l.map(v => v.y));
     const rowFront = ys.length ? Math.min(...ys) : -(m.front ?? 0);
-    for (let c = 0; c < N; c++) if (onHead(r, c) && !vox.has(`${r},${c}`)) vox.set(`${r},${c}`, [{ y: rowFront, colour: A.px[r][c]!.color }]);
+    for (let c = 0; c < N; c++) if (onHead(r, c) && A.px[r][c]!.part === PART.head && !vox.has(`${r},${c}`)) vox.set(`${r},${c}`, [{ y: rowFront, colour: A.px[r][c]!.color }]);
   }
   const headCells = new Map<number, Set<number>>();
   for (const [rc, list] of vox) {
@@ -619,9 +631,9 @@ function useHeadModel(m: HeadModel, A: Analysis, rowCells: Map<number, Map<numbe
 }
 
 /** A head's automatic shape as a voxel model (Mini scale: one voxel per pixel), to start modelling from. */
-export function headVoxels(grid: PunkGrid): VoxModel {
+export function headVoxels(grid: PunkGrid): VoxModel & { front?: number } {
   // a hand-made head is exported as it is, to carry on from
-  if (grid.headModel) return { size: [N, Math.max(...grid.headModel.voxels.map(v => v.y)) + 1, N], voxels: grid.headModel.voxels };
+  if (grid.headModel) return { size: [N, Math.max(...grid.headModel.voxels.map(v => v.y)) + 1, N], voxels: grid.headModel.voxels, front: grid.headModel.front };
   const S = SIZES_SPEC.mini, A = analyze(grid), { rowCells } = voxelize({ ...grid, headModel: undefined }, A, S);
   const voxels: VoxModel['voxels'] = [];
   for (const [r, cells] of rowCells) for (const [k, c] of cells) {
@@ -740,7 +752,13 @@ function repair(layers: LayerRec[], notes: string[], groupOf: (L: LayerRec) => P
     const loose = st.ps.filter((_, i) => !st.g[i])
       .map(P => ({ P, d: Math.min(...solid.filter(q => Math.abs(q.y - P.y) <= 6).map(q => gap(P, q)), 99) }))
       .sort((a, b) => a.d - b.d).slice(0, 12);
-    if (!loose.some(({ P }) => attempt(P, st))) break;
+    if (!loose.some(({ P }) => attempt(P, st))) {
+      // The nearest twelve may all sit on the same floating island. A column under
+      // an upper piece stops at another loose piece and cannot ground the island.
+      // Try its lowest pieces before declaring the model unrepairable.
+      const lowest = st.ps.filter((_, i) => !st.g[i]).sort((a,b) => a.y-b.y);
+      if (!lowest.slice(0, 24).some(P => attempt(P, st))) break;
+    }
   }
   if (pillars) notes.push(`${pillars} support stack${pillars > 1 ? 's' : ''} added under loose pieces.`);
 }

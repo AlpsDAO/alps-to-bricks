@@ -1,0 +1,41 @@
+{
+  "head": "index-card",
+  "about": "Single-voxel index card with a plain paper back; coloured rules are front-only.",
+  "palette": {"a":"#fffdf2","b":"#f38b7c","c":"#a3baed"},
+  "slices": [
+    [
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      ".....bbbbbbbbbbbbbbbbbbbbbb.....",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      ".....cccccccccccccccccccccc.....",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      ".....cccccccccccccccccccccc.....",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      ".....cccccccccccccccccccccc.....",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      ".....aaaaaaaaaaaaaaaaaaaaaa.....",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................"
+    ]
+  ]
+}

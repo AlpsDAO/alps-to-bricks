@@ -150,12 +150,15 @@ describe('hand-made heads (.vox)', () => {
     const g = alp(277);
     const file = writeVox(headVoxels(g)), back = readVox(file);
     expect(back.voxels.length).toBeGreaterThan(1000);
-    expect(buildModel({ ...g, headModel: back }, 'mini').checks.pieces).toBe(buildModel(g, 'mini').checks.pieces);
+    // Authored geometry now has externally fitted eyewear, so its piece count need
+    // not equal the legacy automatic model. The geometry and a solid build must survive.
+    expect(back.voxels).toHaveLength(headVoxels(g).voxels.length);
+    expect(buildModel({ ...g, headModel: back }, 'mini').checks.floating).toBe(0);
     const xl = buildModel({ ...g, headModel: back }, 'xl').checks;
     expect(xl.floating).toBe(0);
   });
   it('keeps the front pixel-exact whatever colour the model has there', () => {
-    const g = alp(277), m = headVoxels(g);
+    const g = alpGrid({ background: 0, body: 0, accessory: 0, head: 57, glasses: 115 }, { without: ['glasses'] }), m = headVoxels(g);
     const painted = { ...m, voxels: m.voxels.map(v => ({ ...v, rgb: [255, 0, 255] as [number, number, number] })) };
     const front = buildModel({ ...g, headModel: painted }, 'mini').pieces.filter(p => p.z === 0 && p.y > 40);
     const auto = buildModel(g, 'mini').pieces.filter(p => p.z === 0 && p.y > 40);

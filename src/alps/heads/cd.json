@@ -1,0 +1,41 @@
+{
+  "head": "cd",
+  "about": "One-voxel optical disc; preserves the hub opening and radial colours on both faces.",
+  "palette": {"a":"#d6c3be","b":"#70e890","c":"#c4da53","d":"#2b83f6","e":"#5a423f","f":"#ff638d","g":"#cc0595","h":"#ffc110","i":"#ab36be"},
+  "slices": [
+    [
+      "................................",
+      "................................",
+      "................................",
+      ".............aaaaaa.............",
+      "...........aabbbbbbaa...........",
+      ".........aabbbbbbbbbbaa.........",
+      "........abbbbbbbbbbbbbba........",
+      ".......acbbbbbbbbbbbbbbba.......",
+      ".......accbbbbbbbbbbbbbba.......",
+      "......acccccbbbbbbbbbbbdda......",
+      "......accccccbeeeebbbdddda......",
+      ".....affffccceaaaaeddddddda.....",
+      ".....affffffeaaaaaaedddddda.....",
+      ".....affffffeaa..aaedddddda.....",
+      ".....affffffeaa..aaegggggga.....",
+      ".....ahhhhhheaaaaaaegggggga.....",
+      ".....ahhhhhhheaaaaeiiggggga.....",
+      "......ahhhhbbbeeeebiiiigga......",
+      "......ahhbbbbbbbbbbbiiiiia......",
+      ".......abbbbbbbbbbbbbiiia.......",
+      ".......abbbbbbbbbbbbbbbia.......",
+      "........abbbbbbbbbbbbbba........",
+      ".........aabbbbbbbbbbaa.........",
+      "...........aabbbbbbaa...........",
+      ".............aaaaaa.............",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................",
+      "................................"
+    ]
+  ]
+}

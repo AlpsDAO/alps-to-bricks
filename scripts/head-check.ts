@@ -10,7 +10,8 @@ import { PART } from '../src/core/detect';
 import { brickVoxels, findHead, loadHeadModel, modelVoxels, seedLink, testSeeds } from './lib/heads';
 import { renderViews } from './lib/render';
 
-const [arg, file] = process.argv.slice(2);
+const strict = process.argv.includes('--strict');
+const [arg, file] = process.argv.slice(2).filter(a => a !== '--strict');
 if (!arg) { console.log('Usage: npx tsx scripts/head-check.ts <head name or number> [model file]'); process.exit(1); }
 const { name, index } = findHead(arg);
 const loaded = loadHeadModel(name, file);
@@ -60,4 +61,7 @@ console.log(`  drawings: ${dir}/model.png, ${dir}/mini.png, ${dir}/xl.png`);
 if (apart.head) console.log(`  ⚠ the head doesn't hold together on its own in ${apart.head} of 24 builds: give its details a solid core to hang from`);
 if (apart.glasses) console.log(`  (the glasses come apart on their own in ${apart.glasses} builds: that's the builder's side, not the head's)`);
 if (problems.length || failing) { console.log(`✗ ${problems.length} problem${problems.length === 1 ? '' : 's'}, ${failing} build${failing === 1 ? '' : 's'} not holding together`); process.exit(1); }
-console.log('✓ good to go');
+if (apart.head || apart.glasses) {
+  console.log('✓ complete bust builds solid; separate head/eyewear assemblies still need structural review');
+  if (strict) process.exit(1);
+} else console.log('✓ good to go');

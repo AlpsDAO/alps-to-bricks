@@ -1,5 +1,7 @@
 # Modelling Alps heads in 3D
 
+> Current implementation: all 248 heads now have explicit models. See [MODEL_REVIEW.md](MODEL_REVIEW.md) for the offline reviewer, generator, validation, and revised eyewear fitting. The original brief below describes the starting constraints; external frames, mounting rails and honest independent-assembly reporting supersede its frame-replacement and unconditional “good to go” assumptions.
+
 A brief for whoever models the heads: a person, or an AI model with access to this repo.
 
 ## The job

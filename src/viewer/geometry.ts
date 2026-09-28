@@ -7,7 +7,7 @@ import { PL } from './timeline';
 
 const cache = new Map<string, THREE.BufferGeometry>();
 
-export const geoKey = (p: Piece) => `${p.kind}${p.w}x${p.d}${p.dir ?? ''}`;
+export const geoKey = (p: Piece) => `${p.kind}${p.w}x${p.d}x${p.h}${p.dir ?? ''}`;
 
 export function pieceGeometry(p: Piece, lowPoly = false): THREE.BufferGeometry {
   const k = geoKey(p) + (lowPoly ? 'L' : '');

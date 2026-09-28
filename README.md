@@ -28,6 +28,8 @@ The model builder (`src/core`) is John Karp's, from [Punk to Bricks](https://git
 
 ## Modelling a head by hand
 
+All 248 heads now have explicit models. [Review and modelling notes](MODEL_REVIEW.md) explain the object-specific recipes, fitted eyewear, offline 3D reviewer, and remaining physical-assembly limits. The automatic styles described above remain as a fallback; the main builder and trait gallery load the authored models.
+
 Any head can be modelled properly, as what it really is, one voxel per pixel: **[HEADS.md](HEADS.md)** is the full brief (for people and AI models alike). In short: a head is `src/alps/heads/<head name>.json`, slices from the front to the back, each a 32×32 grid of characters with a palette (or a MagicaVoxel `.vox`). `npx tsx scripts/head-kit.ts <head>` gives you everything about a head to start from, `npx tsx scripts/head-check.ts <head>` checks a model and builds it on test Alps with drawings to look at, and the tests build every hand-made head with every family of glasses. The site's "More info" panel also downloads any head's current model.
 
 ## Develop
@@ -56,3 +58,5 @@ Adapted from [Punk to Bricks](https://github.com/hs7j4yk4sz-boop/punk-to-bricks)
 ## License
 
 [MIT](LICENSE). See also the [disclaimer](DISCLAIMER.md). Alps artwork is in the public domain.
+
+The [interactive head workshop](./head-workshop.html) is included in production builds: inspect all 248 sculptures, fit any of the 200 glasses, compare source artwork and Mini/XL assemblies, and download editable head JSON.
