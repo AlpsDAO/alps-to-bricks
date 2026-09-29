@@ -50,7 +50,7 @@ const camera=new THREE.PerspectiveCamera(32,1,.1,1000);
 const stage=$('stage');
 const renderer=(()=>{try{return new THREE.WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});}catch{return null;}})();
 if(renderer){renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;stage.append(renderer.domElement);}
-else{const notice=document.createElement('div');notice.textContent='3D rendering needs WebGL. You can still review heads and paint depth slices here; open this page in a WebGL-enabled browser to edit directly in 3D.';stage.append(notice);stage.classList.add('unavailable');for(const id of ['pin','capture','edit3d','front','right','back','top','iso'])($<HTMLButtonElement>(id)).disabled=true;}
+else{const notice=document.createElement('div');notice.textContent='3D rendering needs WebGL. You can still review heads and paint depth slices here; open this page in a WebGL-enabled browser to edit directly in 3D.';stage.append(notice);stage.classList.add('unavailable');for(const id of ['pin','capture','edit3d','front','right','back','top','iso','zoom-in','zoom-out'])($<HTMLButtonElement>(id)).disabled=true;}
 const controls=renderer?new OrbitControls(camera,renderer.domElement):null;if(controls){controls.enableDamping=true;controls.enablePan=true;}
 scene.add(new THREE.HemisphereLight(0xffffff,0xb9bdc8,2.2));
 const sun=new THREE.DirectionalLight(0xffffff,3);sun.position.set(-20,40,50);scene.add(sun);
