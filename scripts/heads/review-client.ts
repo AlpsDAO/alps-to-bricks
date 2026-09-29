@@ -49,6 +49,8 @@ let group=new THREE.Group();scene.add(group);
 let radius=24,centre=new THREE.Vector3();
 function angle(a:number,e=.27){camera.position.copy(centre).add(new THREE.Vector3(Math.sin(a)*Math.cos(e),Math.sin(e),Math.cos(a)*Math.cos(e)).multiplyScalar(radius*3.4));if(controls){controls.target.copy(centre);controls.update();}}
 for(const [id,a,e]of [['front',0,0],['right',Math.PI/2,0],['back',Math.PI,0],['top',0,Math.PI/2-.001],['iso',-.65,.32]] as [string,number,number][])$(id).onclick=()=>angle(a,e);
+function zoom(factor:number){if(!controls)return;const offset=camera.position.clone().sub(controls.target);const distance=THREE.MathUtils.clamp(offset.length()*factor,radius*.65,radius*14);camera.position.copy(controls.target).add(offset.setLength(distance));controls.update();}
+$('zoom-in').onclick=()=>zoom(1/1.3);$('zoom-out').onclick=()=>zoom(1.3);
 if(renderer)new ResizeObserver(()=>{const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();}).observe(stage);
 function clear(){scene.remove(group);group.traverse(o=>{if(o instanceof THREE.InstancedMesh)o.dispose();if(o instanceof THREE.Mesh){const mats=Array.isArray(o.material)?o.material:[o.material];mats.forEach(m=>m.dispose());}});group=new THREE.Group();scene.add(group);}
 const matrix=new THREE.Matrix4();
@@ -156,7 +158,26 @@ function showPins(){markers.clear();for(const p of review[identity()]?.pins??[])
 $('pin').onclick=()=>{if(mode.value!=='shape'&&mode.value!=='fit')mode.value='fit';set3d(false);pinMode=true;$('pin').classList.add('active');$('pin-count').textContent='Click the problem area on the 3D model.';void render(true);};
 $('clear-pins').onclick=()=>{if(review[identity()]){review[identity()].pins=[];persist();showPins();}};
 const raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2();
-renderer?.domElement.addEventListener('pointerdown',e=>{if((!edit3d&&!pinMode)||e.button!==0||!(mode.value==='shape'||mode.value==='fit'))return;const r=renderer.domElement.getBoundingClientRect();pointer.set(((e.clientX-r.left)/r.width)*2-1,-((e.clientY-r.top)/r.height)*2+1);raycaster.setFromCamera(pointer,camera);if(pinMode){const pinHit=raycaster.intersectObjects(group.children,false)[0];if(!pinHit)return;const p=pinHit.point;const r=review[identity()]??{decision:'unreviewed',tags:[],note:'',pins:[]};r.pins=[...(r.pins??[]),([+p.x.toFixed(2),+p.y.toFixed(2),+p.z.toFixed(2)] as [number,number,number])].slice(-30);review[identity()]=r;pinMode=false;$('pin').classList.remove('active');persist();showPins();return;}const hit=raycaster.intersectObjects(pickables,false)[0];if(!hit||hit.instanceId===undefined)return;const cell=(hit.object as THREE.InstancedMesh).userData.cells[hit.instanceId] as {x:number;d:number;z:number;row:number;color:number};if(target.value==='glasses'){if(tool==='pick'){$<HTMLInputElement>('new-color').value=renderHex(cell.color);setTool('recolor');return;}eyewearCheckpoint();let {x,d,row}=cell;if(tool==='paint'){const n=hit.face!.normal;if(Math.abs(n.x)>.5)x+=Math.sign(n.x);else if(Math.abs(n.y)>.5)row-=Math.sign(n.y);else d-=Math.sign(n.z);}const hex=$<HTMLInputElement>('new-color').value,rgb=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)) as [number,number,number],color=mapColors([{rgb,count:999}],new Set())[0];if(putEyewear(row,x,d,tool==='erase'?null:color)){persist();void render(true);}return;}const old=current().slices[cell.d][31-cell.z][cell.x];if(tool==='pick'){if(current().palette[old]){brush=old;setTool('recolor');drawSwatches();}return;}checkpoint();let {x,d,z}=cell;if(tool==='paint'){const n=hit.face!.normal;if(Math.abs(n.x)>.5)x+=Math.sign(n.x);else if(Math.abs(n.y)>.5)z+=Math.sign(n.y);else d-=Math.sign(n.z);if(d<0&&current().slices.length<32){current().slices.unshift(Array(32).fill('.'.repeat(32)));current().front=(current().front??0)+1;d=0;}}if(put(x,d,z,tool==='erase'?'.':brush)){persist();setDepth(d,false);void render(true);}});
+function applyModelTap(clientX:number,clientY:number){if((!edit3d&&!pinMode)||!(mode.value==='shape'||mode.value==='fit'))return;const r=renderer!.domElement.getBoundingClientRect();pointer.set(((clientX-r.left)/r.width)*2-1,-((clientY-r.top)/r.height)*2+1);raycaster.setFromCamera(pointer,camera);if(pinMode){const pinHit=raycaster.intersectObjects(group.children,false)[0];if(!pinHit)return;const p=pinHit.point;const r=review[identity()]??{decision:'unreviewed',tags:[],note:'',pins:[]};r.pins=[...(r.pins??[]),([+p.x.toFixed(2),+p.y.toFixed(2),+p.z.toFixed(2)] as [number,number,number])].slice(-30);review[identity()]=r;pinMode=false;$('pin').classList.remove('active');persist();showPins();return;}const hit=raycaster.intersectObjects(pickables,false)[0];if(!hit||hit.instanceId===undefined)return;const cell=(hit.object as THREE.InstancedMesh).userData.cells[hit.instanceId] as {x:number;d:number;z:number;row:number;color:number};if(target.value==='glasses'){if(tool==='pick'){$<HTMLInputElement>('new-color').value=renderHex(cell.color);setTool('recolor');return;}eyewearCheckpoint();let {x,d,row}=cell;if(tool==='paint'){const n=hit.face!.normal;if(Math.abs(n.x)>.5)x+=Math.sign(n.x);else if(Math.abs(n.y)>.5)row-=Math.sign(n.y);else d-=Math.sign(n.z);}const hex=$<HTMLInputElement>('new-color').value,rgb=[1,3,5].map(i=>parseInt(hex.slice(i,i+2),16)) as [number,number,number],color=mapColors([{rgb,count:999}],new Set())[0];if(putEyewear(row,x,d,tool==='erase'?null:color)){persist();void render(true);}return;}const old=current().slices[cell.d][31-cell.z][cell.x];if(tool==='pick'){if(current().palette[old]){brush=old;setTool('recolor');drawSwatches();}return;}checkpoint();let {x,d,z}=cell;if(tool==='paint'){const n=hit.face!.normal;if(Math.abs(n.x)>.5)x+=Math.sign(n.x);else if(Math.abs(n.y)>.5)z+=Math.sign(n.y);else d-=Math.sign(n.z);if(d<0&&current().slices.length<32){current().slices.unshift(Array(32).fill('.'.repeat(32)));current().front=(current().front??0)+1;d=0;}}if(put(x,d,z,tool==='erase'?'.':brush)){persist();setDepth(d,false);void render(true);}}
+
+// A finger-down can become a pinch. Only a completed, stationary tap edits a block.
+type TapStart={x:number;y:number;time:number;cancelled:boolean};
+const activeTouches=new Map<number,TapStart>();
+renderer?.domElement.addEventListener('pointerdown',e=>{
+ if(e.button!==0)return;
+ const touch={x:e.clientX,y:e.clientY,time:performance.now(),cancelled:false};
+ if(e.pointerType==='touch'&&activeTouches.size){for(const other of activeTouches.values())other.cancelled=true;touch.cancelled=true;}
+ activeTouches.set(e.pointerId,touch);
+});
+renderer?.domElement.addEventListener('pointermove',e=>{
+ const touch=activeTouches.get(e.pointerId);
+ if(touch&&Math.hypot(e.clientX-touch.x,e.clientY-touch.y)>9)touch.cancelled=true;
+});
+renderer?.domElement.addEventListener('pointercancel',e=>activeTouches.delete(e.pointerId));
+renderer?.domElement.addEventListener('pointerup',e=>{
+ const touch=activeTouches.get(e.pointerId);activeTouches.delete(e.pointerId);
+ if(touch&&!touch.cancelled&&performance.now()-touch.time<700)applyModelTap(e.clientX,e.clientY);
+});
 setDepth(0,false);updateFocusButton();updateToolHelp();drawQueue();
 
 function loop(){requestAnimationFrame(loop);controls?.update();renderer?.render(scene,camera);}if(renderer)loop();void render();
