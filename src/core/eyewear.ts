@@ -1,8 +1,8 @@
 /** Eyewear fitted to authored geometry. The frame sits in FRONT of the head; mounting tabs replace
  * small contact regions. Straps/arms follow the actual head depth outside its surface. */
 import type { Analysis } from './analyze';
-import { PART } from './detect';
 import type { EyewearEdit } from './detect';
+import { eyewearFront, type EyewearStyleEdit, type EyewearStyleColor } from './eyewear-style';
 import { key, kx, kz } from './tile';
 
 type Rows = Map<number, Map<number, number>>;
@@ -18,17 +18,18 @@ export function applyEyewearEdits(edits: EyewearEdit[] | undefined, rows: Rows, 
     }
   }
 }
-export function fitEyewear(A: Analysis, rows: Rows, head: Owned, sx: number): Owned {
+export function fitEyewear(A: Analysis, rows: Rows, head: Owned, sx: number, style: EyewearStyleEdit[] = [], styleColors: EyewearStyleColor[] = [], frontLayers = 2): Owned {
   const frame: Owned = new Map();
-  const pixels: [number,number][]=[];
-  for(let r=0;r<32;r++)for(let x=0;x<32;x++)if(A.px[r][x]?.part===PART.glasses&&!A.px[r][x]?.depthFrom)pixels.push([r,x]);
+  const front = eyewearFront(A, style, styleColors);
+  const pixels: [number,number][] = front.filter(c => c.depth === 0).map(c => [c.row, c.x]);
   if(!pixels.length)return frame;
   const headDepths=pixels.flatMap(([r,x])=>[...(head.get(r)??[])].filter(k=>Math.floor(kx(k)/sx)===x).map(kz));
   const allDepths=[...head.values()].flatMap(s=>[...s].map(kz));
   const contact=headDepths.length?Math.min(...headDepths):allDepths.length?Math.min(...allDepths):0;
-  const plane=contact-2*sx;
+  const locked=Math.max(2,Math.min(8,Math.floor(frontLayers)))*sx;
+  const plane=contact-locked;
   const tally=new Map<number,number>();
-  for(const [r,x]of pixels){const c=A.px[r][x]!.color;tally.set(c,(tally.get(c)??0)+1);}
+  for(const c of front.filter(c=>c.depth===0))tally.set(c.color,(tally.get(c.color)??0)+1);
   const frameColour=[...tally].sort((a,b)=>b[1]-a[1])[0][0];
   const add=(r:number,x:number,z:number,c:number)=>{
     const k=key(x,z);if(head.get(r)?.has(k))return; // glasses never cut into the authored head
@@ -36,7 +37,7 @@ export function fitEyewear(A: Analysis, rows: Rows, head: Owned, sx: number): Ow
     let own=frame.get(r);if(!own)frame.set(r,own=new Set());
     cells.set(k,c);own.add(k);
   };
-  for(const [r,x]of pixels)for(let dx=0;dx<sx;dx++)for(let dz=0;dz<2*sx;dz++)add(r,x*sx+dx,plane+dz,dz<sx?A.px[r][x]!.color:frameColour);
+  for(const c of front)for(let dx=0;dx<sx;dx++)for(let dz=0;dz<sx;dz++)add(c.row,c.x*sx+dx,plane+c.depth*sx+dz,c.color);
   // Discreet depth-wise mounting tabs behind the upper/lower frame rim. These engage
   // the head's vertical studs (side-to-side touching alone is not a brick connection).
   // The tab uses the frame backing colour and replaces only its stud contact region.
@@ -52,8 +53,8 @@ export function fitEyewear(A: Analysis, rows: Rows, head: Owned, sx: number): Ow
       for(let z=plane+sx;z<touch+sx;z++){head.get(r)?.delete(key(X,z));add(r,X,z,frameColour);}
     }
   }
-  const G=A.glasses;if(!G)return frame;
-  for(const r of G.rows){
+  const G=A.glasses;
+  if(G)for(const r of G.rows){
     const own=head.get(r);if(!own?.size)continue;
     // Largest connected cross-section is the wearing surface. A nearby tap, antenna or
     // floating fragment is not a reason to route the entire strap out to that detail.
@@ -94,5 +95,9 @@ export function fitEyewear(A: Analysis, rows: Rows, head: Owned, sx: number): Ow
       for(let z=back+1;z<=back+sx;z++)for(let x=Math.min(...xs)-sx;x<=Math.max(...xs)+sx;x++)add(r,x,z,G.color);
     }
   }
+  // Keep every authored front layer exact after the adaptive mounting rails are added.
+  for(const [r,own] of frame)for(const k of [...own])if(kz(k)>=plane&&kz(k)<plane+locked){own.delete(k);rows.get(r)?.delete(k);}
+  for(const e of style.filter(e=>e.depth*sx>=locked&&!e.filled))for(let dx=0;dx<sx;dx++)for(let dz=0;dz<sx;dz++){const k=key(e.x*sx+dx,plane+e.depth*sx+dz);if(frame.get(e.row)?.delete(k))rows.get(e.row)?.delete(k);}
+  for(const c of front)for(let dx=0;dx<sx;dx++)for(let dz=0;dz<sx;dz++)add(c.row,c.x*sx+dx,plane+c.depth*sx+dz,c.color);
   return frame;
 }

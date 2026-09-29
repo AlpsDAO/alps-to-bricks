@@ -1,6 +1,7 @@
 // Find a CryptoPunk (24×24 pixel grid) inside any image: the original PNG,
 // an upscaled copy, a JPEG, or a screenshot with other things around it.
 import { deltaE, rgbDist, rgbToLab, type RGB } from './color';
+import type { EyewearStyleEdit, EyewearStyleColor } from './eyewear-style';
 
 export interface RGBAImage { width: number; height: number; data: Uint8ClampedArray | Uint8Array }
 
@@ -22,6 +23,9 @@ export interface PunkGrid {
   headModel?: HeadModel;
   /** Per head and eyewear corrections to fitted frame cells, in Mini stud coordinates. */
   eyewearEdits?: EyewearEdit[];
+  eyewearStyle?: EyewearStyleEdit[];
+  eyewearStyleColors?: EyewearStyleColor[];
+  eyewearFrontLayers?: number;
 }
 
 export interface EyewearEdit { row: number; x: number; depth: number; color: number | null }

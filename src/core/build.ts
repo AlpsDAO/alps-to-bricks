@@ -485,7 +485,7 @@ function voxelize(grid: PunkGrid, A: Analysis, S: SizeSpec) {
     headCells.set(r, own);
   }
   const glassesCells = grid.headModel
-    ? fitEyewear(A, rowCells, headCells, sx)
+    ? fitEyewear(A, rowCells, headCells, sx, grid.eyewearStyle, grid.eyewearStyleColors, grid.eyewearFrontLayers)
     : placeGlasses(A, rowCells, headCells, sx, grid.under);
   if (A.glasses && !grid.headModel) wearGlasses(A.glasses, rowCells, headCells, sx, D, glassesCells);
   applyEyewearEdits(grid.eyewearEdits, rowCells, headCells, glassesCells, sx);
